@@ -57,7 +57,7 @@ details summary{cursor:pointer;color:var(--pri);font-size:13px;margin-top:10px}
 <nav id="nav"></nav>
 <script>
 // ───────────── 카드 정의 ─────────────
-const CARDS=[{id:'shinhan',name:'신한카드 EV',trLag:1},{id:'hana',name:'MG+ S 하나카드'},{id:'samsung',name:'삼성 iD EV'}];
+const CARDS=[{id:'shinhan',name:'신한카드 EV',trLag:1},{id:'hana',name:'MG+ S 하나카드'},{id:'samsung',name:'삼성 iD EV',excl:['transit','taxi','hipass']}];
 const CATS=[
  ['mart','🛒 대형마트 (이마트·롯데마트·홈플러스)'],['cvs','🏪 편의점'],['hosp','💊 병원/약국'],
  ['coffee','☕ 커피전문점 (스벅·커피빈 등)'],['transit','🚇 대중교통 (버스·지하철)'],['taxi','🚕 택시'],
@@ -116,6 +116,10 @@ const RULES={
  [조건2 삼성 중복 시 큰 금액 1개만] 삼성 prev=600,000, 해외 가맹점(ov) + 스트리밍 17,000원
    → 스트리밍 20% 3,400 vs 해외 1% 170 → 3,400만 적용 (합산 3,570 아님)
    스트리밍 한도(5,000) 소진 후 같은 결제 → 스트리밍 0, 해외 1% 170 적용
+   [삼성 실적 제외] 삼성 prev=700,000(총 사용), 전월 대중교통·택시·하이패스 ex1=150,000
+   → eff=550,000 (60만 미만) → 충전 20,000원 결제 시 50% 10,000 (70% 아님)
+   ex1=50,000이면 eff=650,000 → 70% 14,000. ex1=0이면 eff=700,000
+   월 이월(rollover) 시 ex1 = 이번달 제외 항목(기록+직접입력) 합계, prev = 총 사용
  [조건3 하나 멤버십 연 정기결제 1회] 하나 prev=600,000(한도 30,000), 멤버십 24,000원
    월 정기결제(pt=m) → 12,000 (횟수 제한 없음, 한도 내)
    연 정기결제(pt=y) → 12,000, 기록 후 같은 해 다시 연 결제 → 0 ("올해 이미 사용")
@@ -127,7 +131,7 @@ const TH={shinhan:[3e5,5e5,6e5,1e6],hana:[3e5,6e5,1e6],samsung:[3e5,6e5]};
 const KEY='autocard.v1';
 const today=()=>new Date().toLocaleDateString('sv');
 const curMonth=()=>today().slice(0,7);
-const blank=()=>({monthKey:curMonth(),cards:Object.fromEntries(CARDS.map(c=>[c.id,{prev:0,newIssue:false,spend:0,base:{},tr1:0,tr2:0,trNow:0}])),log:[]});
+const blank=()=>({monthKey:curMonth(),cards:Object.fromEntries(CARDS.map(c=>[c.id,{prev:0,newIssue:false,spend:0,base:{},tr1:0,tr2:0,trNow:0,ex1:0,exNow:0}])),log:[]});
 let S;try{S=JSON.parse(localStorage.getItem(KEY))||blank()}catch(e){S=blank()}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
 let tab='rec',form={amount:'',cat:'mart',date:today(),sp:false,ov:false,pt:'m'};
@@ -136,7 +140,11 @@ const won=n=>Math.round(n).toLocaleString('ko-KR')+'원';
 // 신한 EV: 전월 실적에서 '전월 교통카드 이용액(tr1)'은 빼고 '전전월 교통카드 이용액(tr2)'을 더한다.
 const eff=cid=>{const c=S.cards[cid];let p=c.prev;
   if(CARDS.find(x=>x.id===cid).trLag)p=Math.max(0,p-(c.tr1||0)+(c.tr2||0));
+  const cd=CARDS.find(x=>x.id===cid);
+  if(cd.excl)p=Math.max(0,p-(c.ex1||0));   // 삼성: 대중교통·택시·하이패스는 전월 실적 제외
   return c.newIssue?Math.max(p,K):p};
+const exThis=cid=>{const cd=CARDS.find(x=>x.id===cid);if(!cd.excl)return 0;
+  return (S.cards[cid].exNow||0)+S.log.filter(l=>l.card===cid&&cd.excl.includes(l.cat)&&l.date.startsWith(S.monthKey)).reduce((a,l)=>a+l.amount,0)};
 const trThis=cid=>(S.cards[cid].trNow||0)+S.log.filter(l=>l.card===cid&&l.cat==='transit'&&l.date.startsWith(S.monthKey)).reduce((a,l)=>a+l.amount,0);
 const per=(p,d)=>p.year?d.slice(0,4):d.slice(0,7);
 const logSum=(cid,f)=>S.log.filter(l=>l.card===cid&&f(l)).reduce((a,l)=>a+l.disc,0);
@@ -199,6 +207,7 @@ function rolloverBanner(){
 function rollover(){
   for(const c of CARDS){
     const cs=S.cards[c.id],m=monthSpend(c.id);
+    if(c.excl){cs.ex1=exThis(c.id);cs.exNow=0}
     if(c.trLag){cs.tr2=cs.tr1||0;cs.tr1=trThis(c.id);cs.trNow=0}
     cs.prev=m;cs.spend=0;
     for(const k of Object.keys(cs.base)){const pid=k.slice(1);
@@ -213,7 +222,7 @@ function vRec(){
     const r=rank(form.sp);
     out=r.map((x,i)=>`<div class="res ${i===0&&x.disc>0?'best':''}">
       <div class="top"><span class="nm">${x.c.name}${i===0&&x.disc>0?'<span class="badge">추천</span>':''}</span><span class="amt">${x.disc>0?'-'+won(x.disc):'0원'}</span></div>
-      <div class="dt">${x.why}</div>
+      <div class="dt">${x.why}${x.c.excl&&x.c.excl.includes(form.cat)?'<br>※ 이 결제는 삼성 전월 실적에서 제외됩니다':''}</div>
       <div style="margin-top:8px"><button class="sm ${i===0&&x.disc>0?'':'ghost'}" onclick="record('${x.c.id}')">이 카드로 결제 기록</button></div></div>`).join('');
     if(!form.sp){const a=rank(true)[0];
       if(a.disc>r[0].disc)out=`<div class="hint">💡 간편결제(네이버·카카오·토스·SSG페이 등)로 결제하면 <b>${a.c.name} ${won(a.disc)}</b> 할인 가능</div>`+out;}
@@ -245,7 +254,7 @@ function toast(t){const d=document.createElement('div');d.textContent=t;
 
 function vCards(){
   return`<h1>내 카드 · 실적 입력</h1>`+CARDS.map(c=>{
-    const cs=S.cards[c.id],prev=eff(c.id),ms=monthSpend(c.id),nx=(TH[c.id].find(t=>t>ms));
+    const cs=S.cards[c.id],prev=eff(c.id),ms=monthSpend(c.id)-exThis(c.id),nx=(TH[c.id].find(t=>t>ms));
     const pools=Object.entries(POOLS[c.id]).map(([pid,P])=>{
       const lim=P.lim(prev),used=usedAmt(c.id,pid,today()),pct=lim===Infinity||!lim?0:Math.min(100,used/lim*100);
       return`<div>${P.l}<div class="mut">${lim===Infinity?'한도 없음':lim>0?`한도 ${won(lim)}`:'실적 미달 (혜택 없음)'}</div></div>
@@ -259,6 +268,8 @@ function vCards(){
       ${c.trLag?`<label>전월 교통카드 이용액 — 실적에서 제외됨</label><input type="number" inputmode="numeric" value="${cs.tr1||''}" placeholder="0" onchange="S.cards['${c.id}'].tr1=+this.value||0;save();render()">
       <label>전전월 교통카드 이용액 — 실적에 대신 포함됨</label><input type="number" inputmode="numeric" value="${cs.tr2||''}" placeholder="0" onchange="S.cards['${c.id}'].tr2=+this.value||0;save();render()">
       <label>이번달 교통카드 이용액 (앱 기록 외, 다음달 보정용)</label><input type="number" inputmode="numeric" value="${cs.trNow||''}" placeholder="0" onchange="S.cards['${c.id}'].trNow=+this.value||0;save();render()">`:''}
+      ${c.excl?`<label>전월 대중교통·택시·하이패스 이용액 — 실적에서 자동 제외</label><input type="number" inputmode="numeric" value="${cs.ex1||''}" placeholder="0" onchange="S.cards['${c.id}'].ex1=+this.value||0;save();render()">
+      <label>이번달 대중교통·택시·하이패스 이용액 (앱 기록 외, 다음달 제외용)</label><input type="number" inputmode="numeric" value="${cs.exNow||''}" placeholder="0" onchange="S.cards['${c.id}'].exNow=+this.value||0;save();render()">`:''}
       <label class="chk"><input type="checkbox" ${cs.newIssue?'checked':''} onchange="S.cards['${c.id}'].newIssue=this.checked;save();render()">신규 발급 (등록월+1개월까지 30만원 구간 혜택 보장)</label>
       <div class="mut" style="margin-top:8px">적용 중인 실적: <b>${won(prev)}</b> · 이번달 누적 사용: <b>${won(ms)}</b>${nx?` · 다음달 다음 구간까지 ${won(nx-ms)}`:' · 최상위 구간 달성'}</div>
       <details><summary>이번달 사용한 할인 (앱 밖에서 받은 할인은 여기서 수정)</summary>
