@@ -57,7 +57,7 @@ details summary{cursor:pointer;color:var(--pri);font-size:13px;margin-top:10px}
 <nav id="nav"></nav>
 <script>
 // ───────────── 카드 정의 ─────────────
-const CARDS=[{id:'shinhan',name:'신한카드 EV'},{id:'hana',name:'MG+ S 하나카드'},{id:'samsung',name:'삼성 iD EV'}];
+const CARDS=[{id:'shinhan',name:'신한카드 EV',trLag:1},{id:'hana',name:'MG+ S 하나카드'},{id:'samsung',name:'삼성 iD EV'}];
 const CATS=[
  ['mart','🛒 대형마트 (이마트·롯데마트·홈플러스)'],['cvs','🏪 편의점'],['hosp','💊 병원/약국'],
  ['coffee','☕ 커피전문점 (스벅·커피빈 등)'],['transit','🚇 대중교통 (버스·지하철)'],['taxi','🚕 택시'],
@@ -96,7 +96,8 @@ const RULES={
  hana:[
   {c:'*',p:'main',rate:.1,min:1e4,sp:true,simple:1},
   {c:'stream',p:'main',rate:.5,sp:false},
-  {c:'member',p:'main',rate:.5,sp:false}],
+  {c:'member',p:'main',rate:.5,sp:false,pt:'m'},
+  {c:'member',p:'main',rate:.5,sp:false,pt:'y',ck:'memY',ym:1}],
  samsung:[
   {c:'charge',p:'charge',rate:p=>p>=6e5?.7:.5,sp:false},
   {c:'parking',p:'park',rate:.1,sp:false},{c:'hipass',p:'park',rate:.1,sp:false},{c:'driver',p:'park',rate:.1,sp:false},
@@ -104,6 +105,21 @@ const RULES={
   {c:'stream',p:'stream',rate:.2,sp:false},
   {c:'overseas',p:'abroad',rate:.01},
   {c:'insurance',p:'ins',fixed:3e4,min:3e5,sp:false}]};
+/* ───── 규칙 검증 케이스 (prev = 카드 전월 실적, 결과는 calc() 기준) ─────
+ [기존] 토요일(2026-10-03) 이마트 60,000원, 전월 실적 3장 모두 60만원
+   실물카드: 신한 5,000(3대마트 주말 10%, 1회 5만원까지 인정) / 하나 0 / 삼성 0
+   간편결제: 하나 6,000(10%) / 신한 0 / 삼성 0
+ [조건1 신한 교통카드 전전월 기준] 신한 prev=350,000, 전월 교통카드 tr1=100,000, 전전월 tr2=0
+   → eff=250,000 (<30만) → 대중교통 10,000원 결제 시 0원 (전월 실적 미달)
+   tr2=100,000으로 바꾸면 eff=350,000 → 대중교통 10,000원 = 1,000원 할인
+   신한 prev=350,000, tr1=0, tr2=0 → eff=350,000 (교통 이용이 없으면 그대로)
+ [조건2 삼성 중복 시 큰 금액 1개만] 삼성 prev=600,000, 해외 가맹점(ov) + 스트리밍 17,000원
+   → 스트리밍 20% 3,400 vs 해외 1% 170 → 3,400만 적용 (합산 3,570 아님)
+   스트리밍 한도(5,000) 소진 후 같은 결제 → 스트리밍 0, 해외 1% 170 적용
+ [조건3 하나 멤버십 연 정기결제 1회] 하나 prev=600,000(한도 30,000), 멤버십 24,000원
+   월 정기결제(pt=m) → 12,000 (횟수 제한 없음, 한도 내)
+   연 정기결제(pt=y) → 12,000, 기록 후 같은 해 다시 연 결제 → 0 ("올해 이미 사용")
+   연 결제 소진 후에도 월 정기결제(pt=m)는 정상 적용 */
 const CKNAME={cvs:'편의점',hosp:'병원/약국',coffee:'커피'};
 const TH={shinhan:[3e5,5e5,6e5,1e6],hana:[3e5,6e5,1e6],samsung:[3e5,6e5]};
 
@@ -111,19 +127,23 @@ const TH={shinhan:[3e5,5e5,6e5,1e6],hana:[3e5,6e5,1e6],samsung:[3e5,6e5]};
 const KEY='autocard.v1';
 const today=()=>new Date().toLocaleDateString('sv');
 const curMonth=()=>today().slice(0,7);
-const blank=()=>({monthKey:curMonth(),cards:Object.fromEntries(CARDS.map(c=>[c.id,{prev:0,newIssue:false,spend:0,base:{}}])),log:[]});
+const blank=()=>({monthKey:curMonth(),cards:Object.fromEntries(CARDS.map(c=>[c.id,{prev:0,newIssue:false,spend:0,base:{},tr1:0,tr2:0,trNow:0}])),log:[]});
 let S;try{S=JSON.parse(localStorage.getItem(KEY))||blank()}catch(e){S=blank()}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
-let tab='rec',form={amount:'',cat:'mart',date:today(),sp:false};
+let tab='rec',form={amount:'',cat:'mart',date:today(),sp:false,ov:false,pt:'m'};
 
 const won=n=>Math.round(n).toLocaleString('ko-KR')+'원';
-const eff=cid=>{const c=S.cards[cid];return c.newIssue?Math.max(c.prev,K):c.prev};
+// 신한 EV: 전월 실적에서 '전월 교통카드 이용액(tr1)'은 빼고 '전전월 교통카드 이용액(tr2)'을 더한다.
+const eff=cid=>{const c=S.cards[cid];let p=c.prev;
+  if(CARDS.find(x=>x.id===cid).trLag)p=Math.max(0,p-(c.tr1||0)+(c.tr2||0));
+  return c.newIssue?Math.max(p,K):p};
+const trThis=cid=>(S.cards[cid].trNow||0)+S.log.filter(l=>l.card===cid&&l.cat==='transit'&&l.date.startsWith(S.monthKey)).reduce((a,l)=>a+l.amount,0);
 const per=(p,d)=>p.year?d.slice(0,4):d.slice(0,7);
 const logSum=(cid,f)=>S.log.filter(l=>l.card===cid&&f(l)).reduce((a,l)=>a+l.disc,0);
 const usedAmt=(cid,pid,date)=>{const P=POOLS[cid][pid],k=per(P,date);
   return (S.cards[cid].base['$'+pid]||0)+logSum(cid,l=>l.pool===pid&&per(P,l.date)===k)};
 const cnt=(cid,ck,scope,date)=>{
-  const n=S.log.filter(l=>l.card===cid&&l.ck===ck&&(scope==='d'?l.date===date:l.date.slice(0,7)===date.slice(0,7))).length;
+  const n=S.log.filter(l=>l.card===cid&&l.ck===ck&&(scope==='d'?l.date===date:l.date.slice(0,scope==='y'?4:7)===date.slice(0,scope==='y'?4:7))).length;
   return scope==='m'?n+(S.cards[cid].base['#'+ck]||0):n};
 const monthSpend=cid=>S.cards[cid].spend+S.log.filter(l=>l.card===cid&&l.date.startsWith(S.monthKey)).reduce((a,l)=>a+l.amount,0);
 
@@ -136,6 +156,7 @@ function evalRule(cid,r,tx,prev){
   if(r.min&&tx.amount<r.min)return{disc:0,why:`${won(r.min)} 이상 결제 시 적용`};
   if(r.ck&&r.dm&&cnt(cid,r.ck,'d',tx.date)>=r.dm)return{disc:0,why:'오늘 이미 할인 1회 사용 (일 1회)'};
   if(r.ck&&r.mm&&cnt(cid,r.ck,'m',tx.date)>=r.mm)return{disc:0,why:`월 ${r.mm}회 소진`};
+  if(r.ck&&r.ym&&cnt(cid,r.ck,'y',tx.date)>=r.ym)return{disc:0,why:'연 정기결제·단건 할인은 1회만 제공 (올해 이미 사용)'};
   const rem=lim-usedAmt(cid,r.p,tx.date);
   if(rem<=0)return{disc:0,why:'월(연) 할인한도 소진'};
   const rate=typeof r.rate==='function'?r.rate(prev):r.rate;
@@ -149,7 +170,8 @@ function evalRule(cid,r,tx,prev){
 function calc(cid,tx){
   const prev=eff(cid);let best=null,why='해당 혜택 없음';
   for(const r of RULES[cid]){
-    if(r.c!=='*'&&r.c!==tx.cat)continue;
+    if(!(r.c==='*'||r.c===tx.cat||(r.c==='overseas'&&tx.ov)))continue;
+    if(r.pt&&r.pt!==(tx.pt||'m'))continue;
     if(r.sp===true&&!tx.sp)continue;
     if(r.sp===false&&tx.sp){why='간편결제로는 혜택 제외 (실물카드/직접결제만)';continue}
     const e=evalRule(cid,r,tx,prev);
@@ -157,7 +179,7 @@ function calc(cid,tx){
   }
   return best||{disc:0,why};
 }
-const mkTx=sp=>({amount:+form.amount||0,cat:form.cat,date:form.date,sp,wk:[0,6].includes(new Date(form.date+'T00:00').getDay())});
+const mkTx=sp=>({amount:+form.amount||0,cat:form.cat,date:form.date,sp,ov:!!form.ov,pt:form.pt,wk:[0,6].includes(new Date(form.date+'T00:00').getDay())});
 const rank=sp=>{const tx=mkTx(sp);return CARDS.map(c=>({c,...calc(c.id,tx)})).sort((a,b)=>b.disc-a.disc)};
 
 // ───────────── 화면 ─────────────
@@ -177,6 +199,7 @@ function rolloverBanner(){
 function rollover(){
   for(const c of CARDS){
     const cs=S.cards[c.id],m=monthSpend(c.id);
+    if(c.trLag){cs.tr2=cs.tr1||0;cs.tr1=trThis(c.id);cs.trNow=0}
     cs.prev=m;cs.spend=0;
     for(const k of Object.keys(cs.base)){const pid=k.slice(1);
       if(k[0]==='#'||!(POOLS[c.id][pid]||{}).year)delete cs.base[k]}
@@ -204,6 +227,8 @@ function vRec(){
     <label>결제 금액 (원)</label><input id="f_amt" type="number" inputmode="numeric" value="${form.amount}" oninput="setF('amount',this.value)" placeholder="예: 60000">
     <label>어디서?</label><select onchange="setF('cat',this.value)">${CATS.map(([k,l])=>`<option value="${k}" ${form.cat===k?'selected':''}>${l}</option>`).join('')}</select>
     <label>날짜</label><input type="date" value="${form.date}" onchange="setF('date',this.value)">
+    ${form.cat==='member'?`<label>멤버십 결제 유형</label><select onchange="setF('pt',this.value)"><option value="m" ${form.pt==='m'?'selected':''}>월 정기결제</option><option value="y" ${form.pt==='y'?'selected':''}>연 정기결제·기타 (하나카드 할인 1회만)</option></select>`:''}
+    <label class="chk"><input type="checkbox" ${form.ov?'checked':''} onchange="setF('ov',this.checked)">해외 가맹점 결제 (삼성 해외 1%와 겹치면 큰 쪽만 적용)</label>
     <label class="chk"><input type="checkbox" ${form.sp?'checked':''} onchange="setF('sp',this.checked)">간편결제로 결제 (네이버/카카오/토스/SSG페이…)</label>
   </div>${out||'<div class="mut" style="text-align:center;padding:20px">금액을 입력하면 카드별 할인액이 계산됩니다</div>'}`;
 }
@@ -231,6 +256,9 @@ function vCards(){
     return`<div class="card"><h2>${c.name}</h2>
       <label>전월 실적 (원) — 지난달 실적 인정 사용액</label>
       <input type="number" inputmode="numeric" value="${cs.prev||''}" placeholder="0" onchange="S.cards['${c.id}'].prev=+this.value||0;save();render()">
+      ${c.trLag?`<label>전월 교통카드 이용액 — 실적에서 제외됨</label><input type="number" inputmode="numeric" value="${cs.tr1||''}" placeholder="0" onchange="S.cards['${c.id}'].tr1=+this.value||0;save();render()">
+      <label>전전월 교통카드 이용액 — 실적에 대신 포함됨</label><input type="number" inputmode="numeric" value="${cs.tr2||''}" placeholder="0" onchange="S.cards['${c.id}'].tr2=+this.value||0;save();render()">
+      <label>이번달 교통카드 이용액 (앱 기록 외, 다음달 보정용)</label><input type="number" inputmode="numeric" value="${cs.trNow||''}" placeholder="0" onchange="S.cards['${c.id}'].trNow=+this.value||0;save();render()">`:''}
       <label class="chk"><input type="checkbox" ${cs.newIssue?'checked':''} onchange="S.cards['${c.id}'].newIssue=this.checked;save();render()">신규 발급 (등록월+1개월까지 30만원 구간 혜택 보장)</label>
       <div class="mut" style="margin-top:8px">적용 중인 실적: <b>${won(prev)}</b> · 이번달 누적 사용: <b>${won(ms)}</b>${nx?` · 다음달 다음 구간까지 ${won(nx-ms)}`:' · 최상위 구간 달성'}</div>
       <details><summary>이번달 사용한 할인 (앱 밖에서 받은 할인은 여기서 수정)</summary>
