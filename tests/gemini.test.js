@@ -35,7 +35,7 @@ const today=()=>new Date().toLocaleDateString('sv');
   b=app(()=>gem({amount:60000,category:'mart',date:'2026-10-03',simplePay:true,overseas:false,memberType:null,charger:null}));
   await b.X.gkSave(KEY);
   let r=await b.X.parseNaturalLanguage('토요일 이마트 6만원 SSG페이');
-  ok('정상 파싱',r.amount===60000&&r.cat==='mart'&&r.date==='2026-10-03'&&r.sp===true&&r.ov===false&&r.pt==='m'&&r.op==='',JSON.stringify(r));
+  ok('정상 파싱',r.amount===60000&&r.cat==='mart'&&r.date==='2026-10-03'&&!('sp' in r)&&r.ov===false&&r.pt==='m'&&r.op==='',JSON.stringify(r));
   const c=b.calls[0];
   ok('요청: POST + 키는 헤더(x-goog-api-key), URL에는 없음',c.init.method==='POST'&&c.init.headers['x-goog-api-key']===KEY&&!c.url.includes(KEY)&&!c.url.includes('key='));
   ok('요청: generateContent 엔드포인트 + JSON 응답 요청',/generativelanguage\.googleapis\.com\/v1beta\/models\/[^/]+:generateContent$/.test(c.url)&&JSON.parse(c.init.body).generationConfig.responseMimeType==='application/json');
@@ -45,7 +45,7 @@ const today=()=>new Date().toLocaleDateString('sv');
   // 모델 출력 검증 (신뢰하지 않음)
   const nl=async(o)=>{const x=app(()=>gem(o));await x.X.gkSave(KEY);return x.X.parseNaturalLanguage('테스트')};
   r=await nl({amount:'12,000',category:'없는카테고리',date:'내일',simplePay:'yes',overseas:1,memberType:'z',charger:123});
-  ok('이상한 값 → 안전한 기본값 (etc / 오늘 / 불리언 엄격 / 월정기)',r.cat==='etc'&&r.date===today()&&r.sp===false&&r.ov===false&&r.pt==='m'&&r.amount==='',JSON.stringify(r));
+  ok('이상한 값 → 안전한 기본값 (etc / 오늘 / 해외 불리언 엄격 / 월정기)',r.cat==='etc'&&r.date===today()&&r.ov===false&&r.pt==='m'&&r.amount==='',JSON.stringify(r));
   r=await nl({amount:-500,category:'cvs'});ok('음수 금액 무시',r.amount==='');
   r=await nl({amount:1e12,category:'cvs'});ok('비현실적 금액(1e12) 무시',r.amount==='');
   r=await nl({amount:5000.7,category:'cvs',date:'2026-13-45'});ok('소수 금액 반올림, 잘못된 날짜는 오늘',r.amount===5001&&r.date===today());
@@ -88,7 +88,7 @@ const today=()=>new Date().toLocaleDateString('sv');
   // UI 흐름 (nlRun → 폼 반영)
   b=app(()=>gem({amount:60000,category:'mart',date:'2026-10-03',simplePay:true}));await b.X.gkSave(KEY);
   b.dev.els.nlst={};b.X.setNl('토요일 이마트 6만원 SSG페이');await b.X.nlRun();
-  const f=b.X.getForm();ok('nlRun: 폼에 반영(금액/카테고리/날짜/간편결제)',f.amount===60000&&f.cat==='mart'&&f.date==='2026-10-03'&&f.sp===true);
+  const f=b.X.getForm();ok('nlRun: 폼에 반영(금액/카테고리/날짜)',f.amount===60000&&f.cat==='mart'&&f.date==='2026-10-03');
   ok('nlRun: 상태 문구에 키 없음',!String(b.dev.els.nlst.textContent).includes(KEY)&&/인식/.test(b.dev.els.nlst.textContent));
   b=app(()=>jres(403,{}));await b.X.gkSave(KEY);b.dev.els.nlst={};b.X.setNl('x');await b.X.nlRun();
   ok('nlRun 실패: 폼 그대로, 안내 문구, 이후 재시도 가능',/키가 올바르지/.test(b.dev.els.nlst.textContent)&&b.X.getForm().amount==='');

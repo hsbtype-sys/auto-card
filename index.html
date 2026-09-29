@@ -296,7 +296,16 @@ function calc(cid,tx){
   return best||{disc:0,why};
 }
 const mkTx=sp=>({amount:+form.amount||0,cat:form.cat,date:form.date,sp,op:form.op,ov:!!form.ov,pt:form.pt,wk:[0,6].includes(new Date(form.date+'T00:00').getDay())});
-const rank=sp=>{const tx=mkTx(sp);return CARDS.map(c=>({c,...calc(c.id,tx)})).sort((a,b)=>b.disc-a.disc)};
+// 카드마다 유리한 결제 방식이 다르므로(하나 MG+ 간편결제 10% / 신한·삼성 직접결제) 두 방식을 모두 계산해 더 큰 쪽을 쓴다.
+// 결과 sp=true면 '간편결제로 결제해야 적용'된다는 뜻 (화면에 주의 문구 표시)
+function calcBest(cid,tx){
+  const a=calc(cid,{...tx,sp:false}),b=calc(cid,{...tx,sp:true});
+  const hasSp=RULES[cid].some(r=>r.sp===true);
+  if(b.disc>a.disc||(hasSp&&a.disc===0&&b.disc===0))return{...b,sp:true};
+  return{...a,sp:false};
+}
+const rank=()=>{const tx=mkTx(false);return CARDS.map(c=>({c,...calcBest(c.id,tx)})).sort((a,b)=>b.disc-a.disc)};
+const SIMPLEPAY_WARN='⚠ 간편결제(네이버페이·카카오페이·토스페이·SSG페이·11pay·스마일페이)로 결제해야 적용됩니다. 실물카드·직접결제 시에는 할인이 없어요.';
 
 // ───────────── 클라우드 동기화 (Firebase Auth + Firestore, 선택 기능) ─────────────
 // 문서: users/{uid} = { state: S, updatedAt: serverTimestamp }.  최신 판단은 state._ts 기준(마지막 수정이 더 늦은 쪽이 이김).
@@ -428,7 +437,7 @@ async function parseNaturalLanguage(text,onStatus){
   if(!text)throw new Error('결제 내용을 입력하세요. 예: 어제 이마트 6만원 SSG페이');
   const t0=today(),dw=DOW[new Date(t0+'T00:00').getDay()];
   const prompt=`오늘은 ${t0} (${dw}요일)입니다. 아래 카드 결제 설명을 분석해 JSON 객체 하나만 출력하세요.
-필드: {"amount": 결제금액(원, 정수. 모르면 null), "category": 아래 id 중 하나(애매하면 "etc"), "date": "YYYY-MM-DD"(언급 없으면 오늘), "simplePay": 네이버페이·카카오페이·토스페이·SSG페이 등 간편결제 언급 시 true 아니면 false, "overseas": 해외 결제면 true 아니면 false, "memberType": 멤버십 결제일 때 월 정기면 "m" 연 결제면 "y" (해당 없으면 null), "charger": 전기차 충전 사업자 이름(원문 그대로, 없으면 null)}
+필드: {"amount": 결제금액(원, 정수. 모르면 null), "category": 아래 id 중 하나(애매하면 "etc"), "date": "YYYY-MM-DD"(언급 없으면 오늘), "overseas": 해외 결제면 true 아니면 false, "memberType": 멤버십 결제일 때 월 정기면 "m" 연 결제면 "y" (해당 없으면 null), "charger": 전기차 충전 사업자 이름(원문 그대로, 없으면 null)}
 category id: ${CATS.map(([k,l])=>k+'='+l.replace(/^\S+\s/,'')).join(' / ')}
 결제 설명: <<<${text}>>>`;
   // 일시 오류(503 등 서버 혼잡·네트워크)는 같은 모델로 1회 재시도 후 다음 모델로, 한도(429)·모델없음(404)은 바로 다음 모델로 넘어간다
@@ -465,14 +474,14 @@ function validateNL(raw){
   let date=today();if(typeof o.date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(o.date)&&!isNaN(new Date(o.date+'T00:00')))date=o.date;
   let op='';if(cat==='charge'&&typeof o.charger==='string'){const n=x=>x.toLowerCase().replace(/[\s()·\-]/g,''),q=n(o.charger);
     if(q.length>=2){const i=CHARGERS.findIndex(c=>{const cn=n(c[0]);return cn.includes(q)||q.includes(cn)});if(i>=0)op=String(i)}}
-  return{amount:amt>0&&amt<=1e8?amt:'',cat,date,sp:o.simplePay===true,ov:o.overseas===true,pt:o.memberType==='y'?'y':'m',op};
+  return{amount:amt>0&&amt<=1e8?amt:'',cat,date,ov:o.overseas===true,pt:o.memberType==='y'?'y':'m',op};
 }
 let nlText='',nlBusy=false;
 function nlStatus(m){const el=document.getElementById('nlst');if(el)el.textContent=m}
 async function nlRun(){
   if(nlBusy)return;nlBusy=true;nlStatus('분석 중…');
   try{const r=await parseNaturalLanguage(nlText,nlStatus);Object.assign(form,r);render();
-    nlStatus(`인식: ${CATNAME[r.cat]} · ${r.amount?won(r.amount):'금액 없음'} · ${r.date}${r.sp?' · 간편결제':''}${r.ov?' · 해외':''} — 확인 후 기록하세요`)}
+    nlStatus(`인식: ${CATNAME[r.cat]} · ${r.amount?won(r.amount):'금액 없음'} · ${r.date}${r.ov?' · 해외':''} — 확인 후 기록하세요`)}
   catch(e){nlStatus(e.message||'분석하지 못했습니다.')}
   finally{nlBusy=false}
 }
@@ -506,13 +515,12 @@ function vRec(){
   const ok=+form.amount>0;
   let out='';
   if(ok){
-    const r=rank(form.sp);
+    const r=rank();
     out=r.map((x,i)=>`<div class="res ${i===0&&x.disc>0?'best':''}">
       <div class="top"><span class="nm">${x.c.name}${i===0&&x.disc>0?'<span class="badge">추천</span>':''}</span><span class="amt">${x.disc>0?'-'+won(x.disc):'0원'}</span></div>
       <div class="dt">${x.why}${x.c.excl&&x.c.excl.includes(form.cat)?'<br>※ 이 결제는 삼성 전월 실적에서 제외됩니다':''}</div>
+      ${x.sp&&x.disc>0?`<div class="dt" style="color:var(--warn);margin-top:4px">${SIMPLEPAY_WARN}</div>`:''}
       <div style="margin-top:8px"><button class="sm ${i===0&&x.disc>0?'':'ghost'}" onclick="record('${x.c.id}')">이 카드로 결제 기록</button></div></div>`).join('');
-    if(!form.sp){const a=rank(true)[0];
-      if(a.disc>r[0].disc)out=`<div class="hint">💡 간편결제(네이버·카카오·토스·SSG페이 등)로 결제하면 <b>${a.c.name} ${won(a.disc)}</b> 할인 가능</div>`+out;}
     if(r[0].disc===0){
       const need=CARDS.map(c=>({c,gap:K-eff(c.id)})).filter(x=>x.gap>0).sort((a,b)=>a.gap-b.gap)[0];
       if(need)out+=`<div class="hint">전월 실적을 채우면 혜택이 열리는 카드: <b>${need.c.name}</b> (${won(need.gap)} 부족)</div>`;
@@ -531,12 +539,11 @@ function vRec(){
       <optgroup label="대상 카드 없음">${CHARGERS.map((c,i)=>!c[1]&&!c[2]?`<option value="${i}" ${form.op===String(i)?'selected':''}>${c[0]}</option>`:'').join('')}</optgroup></select>`:''}
     ${form.cat==='member'?`<label>멤버십 결제 유형</label><select onchange="setF('pt',this.value)"><option value="m" ${form.pt==='m'?'selected':''}>월 정기결제</option><option value="y" ${form.pt==='y'?'selected':''}>연 정기결제·기타 (하나카드 할인 1회만)</option></select>`:''}
     <label class="chk"><input type="checkbox" ${form.ov?'checked':''} onchange="setF('ov',this.checked)">해외 가맹점 결제 (삼성 해외 1%와 겹치면 큰 쪽만 적용)</label>
-    <label class="chk"><input type="checkbox" ${form.sp?'checked':''} onchange="setF('sp',this.checked)">간편결제로 결제 (네이버/카카오/토스/SSG페이…)</label>
   </div>${out||'<div class="mut" style="text-align:center;padding:20px">금액을 입력하면 카드별 할인액이 계산됩니다</div>'}`;
 }
 function setF(k,v){form[k]=v;render()}
 function record(cid){
-  const tx=mkTx(form.sp),e=calc(cid,tx);
+  const tx=mkTx(false),e=calcBest(cid,tx);
   S.log.unshift({id:`${Date.now()}_${Math.random().toString(36).slice(2,8)}`,date:tx.date,card:cid,cat:tx.cat,amount:tx.amount,disc:e.disc,pool:e.pool||null,ck:e.disc>0?e.ck||null:null});
   save();form.amount='';tab='rec';render();
   toast(`${CARDS.find(c=>c.id===cid).name} 기록됨 (할인 ${won(e.disc)})`);
