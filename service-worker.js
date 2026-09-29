@@ -1,4 +1,4 @@
-const CACHE = 'auto-card-v6';
+const CACHE = 'auto-card-v7';
 const ASSETS = ['./', './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -12,13 +12,17 @@ self.addEventListener('activate', e => {
   );
 });
 
-// 캐시 우선, 없으면 네트워크. 페이지 이동은 오프라인 시 index.html로 폴백.
+// 네트워크 우선: 온라인이면 항상 최신 파일을 받아 캐시를 갱신하고, 오프라인이면 캐시로 동작한다.
+// (그래서 앱을 고쳐 배포해도 캐시 버전을 올릴 필요 없이 다음 실행 때 자동 반영된다)
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  // 다른 출처(Firebase SDK·Firestore·구글 로그인)는 서비스워커가 건드리지 않고 그대로 네트워크로 보낸다
+  // 다른 출처(Firebase SDK·Firestore·구글 로그인)는 서비스워커가 건드리지 않는다
   if (new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(
-    caches.match(e.request).then(hit => hit || fetch(e.request).catch(() =>
-      e.request.mode === 'navigate' ? caches.match('./index.html') : Response.error()))
+    fetch(e.request, { cache: 'no-cache' }).then(res => {
+      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
+      return res;
+    }).catch(() => caches.match(e.request).then(hit =>
+      hit || (e.request.mode === 'navigate' ? caches.match('./index.html') : Response.error())))
   );
 });

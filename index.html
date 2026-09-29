@@ -480,7 +480,15 @@ function vLog(){
 function delLog(id){S.log=S.log.filter(l=>String(l.id)!==String(id));save();render()}
 render();
 initCloud();
-if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('service-worker.js').catch(()=>{}));
+if('serviceWorker' in navigator){
+  // 새 버전 서비스워커가 인계받으면 자동으로 새로고침 (입력 중이면 다음 실행 때 반영). 첫 설치 때는 새로고침하지 않음
+  const hadCtl=!!navigator.serviceWorker.controller;let reloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(!hadCtl||reloaded)return;
+    const a=document.activeElement;if(a&&/INPUT|SELECT|TEXTAREA/.test(a.tagName))return;
+    reloaded=true;location.reload()});
+  window.addEventListener('load',()=>navigator.serviceWorker.register('service-worker.js').then(r=>r.update()).catch(()=>{}));
+}
 </script>
 </body>
 </html>
