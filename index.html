@@ -12,6 +12,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <style>
 :root{--bg:#f4f5f7;--card:#fff;--tx:#111827;--mut:#6b7280;--line:#e5e7eb;--pri:#2563eb;--ok:#059669;--warn:#d97706;--bad:#dc2626;--soft:#eef2ff}
 @media(prefers-color-scheme:dark){:root{--bg:#0e1014;--card:#171a21;--tx:#f3f4f6;--mut:#9ca3af;--line:#282d38;--pri:#60a5fa;--ok:#34d399;--warn:#fbbf24;--bad:#f87171;--soft:#1e2433}}
@@ -56,6 +59,15 @@ details summary{cursor:pointer;color:var(--pri);font-size:13px;margin-top:10px}
 <main id="app"></main>
 <nav id="nav"></nav>
 <script>
+// ───────────── Firebase 설정 (apiKey가 PLACEHOLDER면 클라우드 동기화 없이 localStorage로만 동작) ─────────────
+const FIREBASE_CONFIG = {
+  apiKey: "PLACEHOLDER",
+  authDomain: "PLACEHOLDER",
+  projectId: "PLACEHOLDER",
+  storageBucket: "PLACEHOLDER",
+  messagingSenderId: "PLACEHOLDER",
+  appId: "PLACEHOLDER"
+};
 // ───────────── 카드 정의 ─────────────
 const CARDS=[{id:'shinhan',name:'신한카드 EV',trLag:1},{id:'hana',name:'MG+ S 하나카드'},{id:'samsung',name:'삼성 iD EV',excl:['transit','taxi','hipass']}];
 const CATS=[
@@ -212,7 +224,9 @@ const today=()=>new Date().toLocaleDateString('sv');
 const curMonth=()=>today().slice(0,7);
 const blank=()=>({monthKey:curMonth(),cards:Object.fromEntries(CARDS.map(c=>[c.id,{prev:0,newIssue:false,spend:0,base:{},tr1:0,tr2:0,trNow:0,ex1:0,exNow:0}])),log:[]});
 let S;try{S=JSON.parse(localStorage.getItem(KEY))||blank()}catch(e){S=blank()}
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+// S._ts = 마지막 수정 시각(ms). 기기 간 최신 판단과 '내가 방금 쓴 변경' 식별에 사용
+const save=()=>{S._ts=Date.now();saveLocal();cloudSchedule()};
 let tab='rec',form={amount:'',cat:'mart',date:today(),sp:false,ov:false,pt:'m',op:''};
 
 const won=n=>Math.round(n).toLocaleString('ko-KR')+'원';
@@ -274,6 +288,89 @@ function calc(cid,tx){
 const mkTx=sp=>({amount:+form.amount||0,cat:form.cat,date:form.date,sp,op:form.op,ov:!!form.ov,pt:form.pt,wk:[0,6].includes(new Date(form.date+'T00:00').getDay())});
 const rank=sp=>{const tx=mkTx(sp);return CARDS.map(c=>({c,...calc(c.id,tx)})).sort((a,b)=>b.disc-a.disc)};
 
+// ───────────── 클라우드 동기화 (Firebase Auth + Firestore, 선택 기능) ─────────────
+// 문서: users/{uid} = { state: S, updatedAt: serverTimestamp }.  최신 판단은 state._ts 기준(마지막 수정이 더 늦은 쪽이 이김).
+let fbAuth=null,fbDb=null,fbUser=null,fbUnsub=null,syncTimer=null,syncMsg='';
+const cloudReady=()=>!!(fbAuth&&fbDb);
+const docRef=()=>fbDb.doc('users/'+fbUser.uid);
+function setSync(m){syncMsg=m;const el=document.getElementById('syncst');if(el)el.textContent=m}
+function stamp(){return new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}
+function cloudSchedule(){
+  if(!fbUser)return;
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(pushNow,1000);
+  setSync('변경 사항 저장 대기 중…');
+}
+function pushNow(){
+  clearTimeout(syncTimer);syncTimer=null;
+  if(!fbUser)return Promise.resolve();
+  setSync(navigator.onLine===false?'오프라인 — 온라인이 되면 자동 동기화':'동기화 중…');
+  const state=JSON.parse(JSON.stringify(S));
+  return docRef().set({state,updatedAt:firebase.firestore.FieldValue.serverTimestamp()})
+    .then(()=>setSync('동기화됨 '+stamp()))
+    .catch(e=>setSync('동기화 실패: '+(e.code||e.message)));
+}
+// 원격 데이터를 반영. 로컬 저장만 하고(클라우드 재업로드 없음) 화면을 갱신한다
+function applyRemote(rs){S=rs;saveLocal();render()}
+function onRemote(snap){
+  if(!snap.exists){if(!snap.metadata.fromCache)pushNow();return}   // 서버 확인 결과 비어 있음 → 로컬 업로드 (캐시만 본 경우엔 대기: 오프라인 신규 기기가 원격을 덮어쓰는 사고 방지)
+  if(snap.metadata.hasPendingWrites)return;          // 내가 방금 쓴 변경의 로컬 반영 이벤트 → 무시
+  const rs=snap.data().state;
+  if(!rs||!rs.cards||!Array.isArray(rs.log))return;
+  const rt=rs._ts||0,lt=S._ts||0;
+  if(rt>lt){applyRemote(rs);setSync('다른 기기 변경 반영됨 '+stamp())}
+  else if(rt<lt){if(!syncTimer)pushNow()}            // 로컬이 더 최신 → 업로드
+  else setSync('동기화됨 '+stamp());                  // 같음
+}
+function onAuth(user){
+  if(fbUnsub){fbUnsub();fbUnsub=null}
+  fbUser=user;
+  if(user){setSync('동기화 확인 중…');
+    fbUnsub=docRef().onSnapshot({includeMetadataChanges:true},onRemote,e=>setSync('동기화 오류: '+(e.code||e.message)))}
+  else setSync('');
+  render();
+}
+function initCloud(){
+  if(typeof firebase==='undefined'||FIREBASE_CONFIG.apiKey==='PLACEHOLDER')return;
+  try{
+    firebase.initializeApp(FIREBASE_CONFIG);
+    fbAuth=firebase.auth();fbDb=firebase.firestore();
+    // 오프라인 캐시(IndexedDB). compat SDK에서는 persistentLocalCache 대신 enablePersistence가 같은 기능
+    fbDb.enablePersistence({synchronizeTabs:true}).catch(()=>{});
+    fbAuth.getRedirectResult().catch(()=>{});
+    fbAuth.onAuthStateChanged(onAuth);
+  }catch(e){fbAuth=fbDb=null;console.warn('Firebase 초기화 실패 — localStorage로만 동작',e)}
+}
+async function cloudLogin(){
+  if(!cloudReady())return alert('클라우드 동기화를 사용할 수 없습니다 (설정 미완료 또는 오프라인).');
+  const pr=new firebase.auth.GoogleAuthProvider();
+  try{await fbAuth.signInWithPopup(pr)}
+  catch(e){
+    if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment'].includes(e.code))fbAuth.signInWithRedirect(pr);
+    else if(!['auth/popup-closed-by-user','auth/cancelled-popup-request'].includes(e.code))alert('로그인 실패: '+(e.code||e.message));
+  }
+}
+function cloudLogout(){if(fbAuth)fbAuth.signOut()}
+// 수동 동기화: 서버 최신본을 확인해 원격이 더 새로우면 가져오고, 아니면 로컬을 업로드
+async function cloudSyncNow(){
+  if(!fbUser)return;
+  try{
+    setSync('동기화 중…');
+    const snap=await docRef().get({source:'server'});
+    const rs=snap.exists&&snap.data().state;
+    if(rs&&rs.cards&&Array.isArray(rs.log)&&(rs._ts||0)>(S._ts||0)){applyRemote(rs);setSync('서버의 최신 데이터를 불러옴 '+stamp())}
+    else await pushNow();
+  }catch(e){setSync('동기화 실패: '+(e.code||e.message))}
+}
+function cloudUI(){
+  if(FIREBASE_CONFIG.apiKey==='PLACEHOLDER')return`<div class="mut" style="margin-top:8px">클라우드 동기화 미설정 — 데이터는 이 기기에만 저장됩니다. 다른 기기로 옮길 때 백업 → 복원을 사용하세요.</div>`;
+  if(!cloudReady())return`<div class="mut" style="margin-top:8px">클라우드 동기화를 불러오지 못했습니다(오프라인?). 데이터는 이 기기에 저장되고, 다시 접속하면 동기화됩니다.</div>`;
+  if(!fbUser)return`<div style="margin-top:10px"><button onclick="cloudLogin()">Google로 로그인</button></div>
+    <div class="mut" style="margin-top:8px">로그인하면 폰·PC에서 같은 데이터를 봅니다. 로그인하지 않아도 이 기기에서는 그대로 사용할 수 있어요.</div>`;
+  return`<div class="mut" style="margin-top:10px">로그인됨: <b>${fbUser.email||fbUser.displayName||fbUser.uid}</b><br><span id="syncst">${syncMsg}</span></div>
+    <div class="row" style="margin-top:8px"><button class="ghost" onclick="cloudSyncNow()">지금 동기화</button><button class="ghost" onclick="cloudLogout()">로그아웃</button></div>`;
+}
+
 // ───────────── 화면 ─────────────
 function render(){
   document.getElementById('nav').innerHTML=[['rec','💡 추천'],['cards','💳 내 카드'],['log','🧾 기록']]
@@ -331,7 +428,7 @@ function vRec(){
 function setF(k,v){form[k]=v;render()}
 function record(cid){
   const tx=mkTx(form.sp),e=calc(cid,tx);
-  S.log.unshift({id:Date.now(),date:tx.date,card:cid,cat:tx.cat,amount:tx.amount,disc:e.disc,pool:e.pool||null,ck:e.disc>0?e.ck||null:null});
+  S.log.unshift({id:`${Date.now()}_${Math.random().toString(36).slice(2,8)}`,date:tx.date,card:cid,cat:tx.cat,amount:tx.amount,disc:e.disc,pool:e.pool||null,ck:e.disc>0?e.ck||null:null});
   save();form.amount='';tab='rec';render();
   toast(`${CARDS.find(c=>c.id===cid).name} 기록됨 (할인 ${won(e.disc)})`);
 }
@@ -364,7 +461,7 @@ function vCards(){
           <div>이번달 직접입력 실적 (앱 기록 외)</div><input type="number" value="${cs.spend||0}" onchange="S.cards['${c.id}'].spend=+this.value||0;save();render()">
         </div></details></div>`}).join('')+
   `<div class="card"><h2>데이터</h2><div class="row"><button class="ghost" onclick="exp()">백업(JSON 복사)</button><button class="ghost" onclick="imp()">복원</button></div>
-   <div class="mut" style="margin-top:8px">데이터는 이 브라우저에만 저장됩니다. 다른 기기로 옮길 때 백업 → 복원을 사용하세요.</div></div>`;
+   ${cloudUI()}</div>`;
 }
 function setUsed(cid,pid,v){const P=POOLS[cid][pid],k=per(P,today());
   const lg=logSum(cid,l=>l.pool===pid&&per(P,l.date)===k);
@@ -378,10 +475,11 @@ function vLog(){
   const m=S.log.filter(l=>l.date.startsWith(curMonth())),sum=m.reduce((a,l)=>a+l.disc,0);
   return`<h1>결제 기록</h1><div class="hint">이번달 할인 합계 <b>${won(sum)}</b> · ${m.length}건</div><div class="card">`+
    (S.log.length?S.log.slice(0,100).map(l=>`<div class="log"><div><b>${CARDS.find(c=>c.id===l.card).name}</b> · ${CATNAME[l.cat]}<div class="mut">${l.date} · ${won(l.amount)}</div></div>
-   <div style="text-align:right;white-space:nowrap"><span style="color:var(--ok);font-weight:700">-${won(l.disc)}</span><br><button class="sm ghost" onclick="delLog(${l.id})">삭제</button></div></div>`).join(''):'<div class="mut">아직 기록이 없어요</div>')+`</div>`;
+   <div style="text-align:right;white-space:nowrap"><span style="color:var(--ok);font-weight:700">-${won(l.disc)}</span><br><button class="sm ghost" onclick="delLog('${l.id}')">삭제</button></div></div>`).join(''):'<div class="mut">아직 기록이 없어요</div>')+`</div>`;
 }
-function delLog(id){S.log=S.log.filter(l=>l.id!==id);save();render()}
+function delLog(id){S.log=S.log.filter(l=>String(l.id)!==String(id));save();render()}
 render();
+initCloud();
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('service-worker.js').catch(()=>{}));
 </script>
 </body>
