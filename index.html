@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Auto Card</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2563eb">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Auto Card">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--tx:#111827;--mut:#6b7280;--line:#e5e7eb;--pri:#2563eb;--ok:#059669;--warn:#d97706;--bad:#dc2626;--soft:#eef2ff}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1014;--card:#171a21;--tx:#f3f4f6;--mut:#9ca3af;--line:#282d38;--pri:#60a5fa;--ok:#34d399;--warn:#fbbf24;--bad:#f87171;--soft:#1e2433}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+main{max-width:560px;margin:0 auto;padding:16px 16px 90px}
+h1{font-size:19px;margin:4px 0 12px}
+h2{font-size:15px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:12px;color:var(--mut);margin:8px 0 3px}
+input,select,button{font:inherit;color:inherit}
+input[type=number],input[type=date],select{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
+.chk{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;color:var(--tx)}
+.chk input{width:18px;height:18px;flex:none}
+button{border:0;border-radius:10px;padding:9px 12px;background:var(--pri);color:#fff;cursor:pointer;font-weight:600}
+button.ghost{background:transparent;color:var(--pri);border:1px solid var(--line)}
+button.sm{padding:5px 9px;font-size:12px}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;color:var(--mut);border-radius:0;padding:14px 0}
+nav button.on{color:var(--pri)}
+.res{border:2px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px;background:var(--card)}
+.res.best{border-color:var(--ok)}
+.res .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.res .nm{font-weight:700}.res .amt{font-size:22px;font-weight:800}.best .amt{color:var(--ok)}
+.res .dt{font-size:13px;color:var(--mut);margin-top:2px}
+.badge{font-size:11px;background:var(--ok);color:#fff;border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+.hint{background:var(--soft);border-radius:10px;padding:9px 11px;font-size:13px;margin-bottom:10px}
+.warn{background:var(--soft);border-left:4px solid var(--warn)}
+.bar{height:7px;background:var(--line);border-radius:4px;overflow:hidden;margin:4px 0}
+.bar i{display:block;height:100%;background:var(--pri)}
+.pool{display:grid;grid-template-columns:1fr 110px;gap:4px 8px;align-items:center;margin-top:10px;font-size:13px}
+.pool .full{grid-column:1/-1}
+.pool input{padding:6px 8px;text-align:right}
+.mut{color:var(--mut);font-size:12px}
+.log{display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+.log:last-child{border:0}
+details summary{cursor:pointer;color:var(--pri);font-size:13px;margin-top:10px}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<nav id="nav"></nav>
+<script>
+// ───────────── 카드 정의 ─────────────
+const CARDS=[{id:'shinhan',name:'신한카드 EV'},{id:'hana',name:'MG+ S 하나카드'},{id:'samsung',name:'삼성 iD EV'}];
+const CATS=[
+ ['mart','🛒 대형마트 (이마트·롯데마트·홈플러스)'],['cvs','🏪 편의점'],['hosp','💊 병원/약국'],
+ ['coffee','☕ 커피전문점 (스벅·커피빈 등)'],['transit','🚇 대중교통 (버스·지하철)'],['taxi','🚕 택시'],
+ ['charge','⚡ 전기차 충전'],['hipass','🛣 하이패스'],['parking','🅿 주차장 (케이엠파크)'],['driver','🚗 대리운전 (카카오T)'],
+ ['delivery','🛵 배달앱 (배민·쿠팡이츠)'],['stream','🎬 영상 스트리밍 정기결제'],['member','🎟 디지털 멤버십 (네이버플러스·쿠팡와우 등)'],
+ ['insurance','🛡 자동차보험 (현대해상 다이렉트)'],['overseas','🌏 해외 결제'],['etc','🧾 기타 일반']];
+const CATNAME=Object.fromEntries(CATS);
+const T=(p,a)=>{for(const[m,v]of a)if(p>=m)return v;return 0};
+const K=3e5;
+// 한도 풀: lim(전월실적) → 월(또는 연) 한도
+const POOLS={
+ shinhan:{charge:{l:'충전 할인 (월)',lim:p=>p>=K?2e4:0},
+          hipass:{l:'하이패스 캐시백 (월)',lim:p=>p>=K?5e3:0},
+          life:{l:'생활 통합 (편의점·병원·마트·교통·커피)',lim:p=>T(p,[[1e6,3e4],[5e5,2e4],[K,1e4]])},
+          ins:{l:'보험료 3만원 (연)',lim:()=>3e4,year:1}},
+ hana:{main:{l:'청구할인 통합 (간편결제·스트리밍·멤버십)',lim:p=>T(p,[[1e6,6e4],[6e5,3e4],[K,15e3]])}},
+ samsung:{charge:{l:'충전 50/70% (월)',lim:p=>p>=6e5?3e4:p>=K?2e4:0},
+          park:{l:'주차·하이패스·대리 통합 (월)',lim:p=>p>=K?5e3:0},
+          deliv:{l:'배달앱 (월)',lim:p=>T(p,[[6e5,1e4],[K,5e3]])},
+          stream:{l:'스트리밍 (월)',lim:p=>p>=K?5e3:0},
+          abroad:{l:'해외 1% (한도 없음)',lim:()=>Infinity},
+          ins:{l:'보험료 3만원 (연)',lim:()=>3e4,year:1}}};
+// 규칙: c=카테고리('*'=전체) p=풀 rate/fixed cap=건당 인정금액 상한 min=최소결제 wk=주말만
+//       sp=true간편결제필수/false간편결제불가 ck=횟수키 dm=일 최대 mm=월 최대
+const RULES={
+ shinhan:[
+  {c:'charge',p:'charge',rate:p=>p>=6e5?.5:.3,sp:false},
+  {c:'hipass',p:'hipass',rate:.1,sp:false},
+  {c:'cvs',p:'life',rate:.1,cap:1e4,ck:'cvs',dm:1,mm:5,sp:false},
+  {c:'hosp',p:'life',rate:.1,cap:1e4,ck:'hosp',dm:1,mm:5,sp:false},
+  {c:'mart',p:'life',rate:.1,cap:5e4,wk:1,ck:'mart',dm:1,sp:false},
+  {c:'transit',p:'life',rate:.1,sp:false},
+  {c:'taxi',p:'life',rate:.1,sp:false},
+  {c:'coffee',p:'life',rate:.1,cap:1e4,ck:'coffee',dm:1,mm:5,sp:false},
+  {c:'insurance',p:'ins',fixed:3e4,min:3e5,sp:false}],
+ hana:[
+  {c:'*',p:'main',rate:.1,min:1e4,sp:true,simple:1},
+  {c:'stream',p:'main',rate:.5,sp:false},
+  {c:'member',p:'main',rate:.5,sp:false}],
+ samsung:[
+  {c:'charge',p:'charge',rate:p=>p>=6e5?.7:.5,sp:false},
+  {c:'parking',p:'park',rate:.1,sp:false},{c:'hipass',p:'park',rate:.1,sp:false},{c:'driver',p:'park',rate:.1,sp:false},
+  {c:'delivery',p:'deliv',rate:.1,sp:false},
+  {c:'stream',p:'stream',rate:.2,sp:false},
+  {c:'overseas',p:'abroad',rate:.01},
+  {c:'insurance',p:'ins',fixed:3e4,min:3e5,sp:false}]};
+const CKNAME={cvs:'편의점',hosp:'병원/약국',coffee:'커피'};
+const TH={shinhan:[3e5,5e5,6e5,1e6],hana:[3e5,6e5,1e6],samsung:[3e5,6e5]};
+
+// ───────────── 상태 ─────────────
+const KEY='autocard.v1';
+const today=()=>new Date().toLocaleDateString('sv');
+const curMonth=()=>today().slice(0,7);
+const blank=()=>({monthKey:curMonth(),cards:Object.fromEntries(CARDS.map(c=>[c.id,{prev:0,newIssue:false,spend:0,base:{}}])),log:[]});
+let S;try{S=JSON.parse(localStorage.getItem(KEY))||blank()}catch(e){S=blank()}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+let tab='rec',form={amount:'',cat:'mart',date:today(),sp:false};
+
+const won=n=>Math.round(n).toLocaleString('ko-KR')+'원';
+const eff=cid=>{const c=S.cards[cid];return c.newIssue?Math.max(c.prev,K):c.prev};
+const per=(p,d)=>p.year?d.slice(0,4):d.slice(0,7);
+const logSum=(cid,f)=>S.log.filter(l=>l.card===cid&&f(l)).reduce((a,l)=>a+l.disc,0);
+const usedAmt=(cid,pid,date)=>{const P=POOLS[cid][pid],k=per(P,date);
+  return (S.cards[cid].base['$'+pid]||0)+logSum(cid,l=>l.pool===pid&&per(P,l.date)===k)};
+const cnt=(cid,ck,scope,date)=>{
+  const n=S.log.filter(l=>l.card===cid&&l.ck===ck&&(scope==='d'?l.date===date:l.date.slice(0,7)===date.slice(0,7))).length;
+  return scope==='m'?n+(S.cards[cid].base['#'+ck]||0):n};
+const monthSpend=cid=>S.cards[cid].spend+S.log.filter(l=>l.card===cid&&l.date.startsWith(S.monthKey)).reduce((a,l)=>a+l.amount,0);
+
+// ───────────── 계산 엔진 ─────────────
+function evalRule(cid,r,tx,prev){
+  const P=POOLS[cid][r.p];
+  if(r.wk&&!tx.wk)return{disc:0,why:'주말(토·일)에만 적용'};
+  const lim=P.lim(prev);
+  if(!(lim>0))return{disc:0,why:`전월 실적 미달 (현재 ${won(prev)}, ${won(K)} 필요)`};
+  if(r.min&&tx.amount<r.min)return{disc:0,why:`${won(r.min)} 이상 결제 시 적용`};
+  if(r.ck&&r.dm&&cnt(cid,r.ck,'d',tx.date)>=r.dm)return{disc:0,why:'오늘 이미 할인 1회 사용 (일 1회)'};
+  if(r.ck&&r.mm&&cnt(cid,r.ck,'m',tx.date)>=r.mm)return{disc:0,why:`월 ${r.mm}회 소진`};
+  const rem=lim-usedAmt(cid,r.p,tx.date);
+  if(rem<=0)return{disc:0,why:'월(연) 할인한도 소진'};
+  const rate=typeof r.rate==='function'?r.rate(prev):r.rate;
+  const raw=r.fixed!=null?r.fixed:Math.floor(Math.min(tx.amount,r.cap||Infinity)*rate);
+  const disc=Math.min(raw,rem);
+  const parts=[r.fixed!=null?'정액 '+won(r.fixed):Math.round(rate*100)+'%'+(r.cap?` (건당 ${won(r.cap)}까지 인정)`:'')];
+  if(disc<raw)parts.push('한도 부족으로 일부만');
+  parts.push(lim===Infinity?'한도 없음':`한도 잔여 ${won(rem)} → ${won(rem-disc)}`);
+  return{disc,rule:r,pool:r.p,ck:r.ck,why:parts.join(' · ')};
+}
+function calc(cid,tx){
+  const prev=eff(cid);let best=null,why='해당 혜택 없음';
+  for(const r of RULES[cid]){
+    if(r.c!=='*'&&r.c!==tx.cat)continue;
+    if(r.sp===true&&!tx.sp)continue;
+    if(r.sp===false&&tx.sp){why='간편결제로는 혜택 제외 (실물카드/직접결제만)';continue}
+    const e=evalRule(cid,r,tx,prev);
+    if(!best||e.disc>best.disc)best=e;
+  }
+  return best||{disc:0,why};
+}
+const mkTx=sp=>({amount:+form.amount||0,cat:form.cat,date:form.date,sp,wk:[0,6].includes(new Date(form.date+'T00:00').getDay())});
+const rank=sp=>{const tx=mkTx(sp);return CARDS.map(c=>({c,...calc(c.id,tx)})).sort((a,b)=>b.disc-a.disc)};
+
+// ───────────── 화면 ─────────────
+function render(){
+  document.getElementById('nav').innerHTML=[['rec','💡 추천'],['cards','💳 내 카드'],['log','🧾 기록']]
+    .map(([k,l])=>`<button class="${tab===k?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('');
+  const el=document.getElementById('app');
+  const fn={rec:vRec,cards:vCards,log:vLog}[tab];
+  const keep=document.activeElement&&document.activeElement.id;
+  el.innerHTML=rolloverBanner()+fn();
+  if(keep){const n=document.getElementById(keep);if(n){n.focus();try{n.setSelectionRange(n.value.length,n.value.length)}catch(e){}}}
+}
+function rolloverBanner(){
+  if(S.monthKey===curMonth())return'';
+  return`<div class="hint warn"><b>새 달이 시작됐어요 (${S.monthKey} → ${curMonth()})</b><br>지난달 누적 실적으로 '전월 실적'을 자동 갱신하고 이번달 할인 사용량을 초기화합니다. (연 1회 보험 혜택은 유지)<br><button class="sm" style="margin-top:8px" onclick="rollover()">전월 실적 갱신</button></div>`;
+}
+function rollover(){
+  for(const c of CARDS){
+    const cs=S.cards[c.id],m=monthSpend(c.id);
+    cs.prev=m;cs.spend=0;
+    for(const k of Object.keys(cs.base)){const pid=k.slice(1);
+      if(k[0]==='#'||!(POOLS[c.id][pid]||{}).year)delete cs.base[k]}
+  }
+  S.monthKey=curMonth();save();render();
+}
+function vRec(){
+  const ok=+form.amount>0;
+  let out='';
+  if(ok){
+    const r=rank(form.sp);
+    out=r.map((x,i)=>`<div class="res ${i===0&&x.disc>0?'best':''}">
+      <div class="top"><span class="nm">${x.c.name}${i===0&&x.disc>0?'<span class="badge">추천</span>':''}</span><span class="amt">${x.disc>0?'-'+won(x.disc):'0원'}</span></div>
+      <div class="dt">${x.why}</div>
+      <div style="margin-top:8px"><button class="sm ${i===0&&x.disc>0?'':'ghost'}" onclick="record('${x.c.id}')">이 카드로 결제 기록</button></div></div>`).join('');
+    if(!form.sp){const a=rank(true)[0];
+      if(a.disc>r[0].disc)out=`<div class="hint">💡 간편결제(네이버·카카오·토스·SSG페이 등)로 결제하면 <b>${a.c.name} ${won(a.disc)}</b> 할인 가능</div>`+out;}
+    if(r[0].disc===0){
+      const need=CARDS.map(c=>({c,gap:K-eff(c.id)})).filter(x=>x.gap>0).sort((a,b)=>a.gap-b.gap)[0];
+      if(need)out+=`<div class="hint">전월 실적을 채우면 혜택이 열리는 카드: <b>${need.c.name}</b> (${won(need.gap)} 부족)</div>`;
+    }
+  }
+  return`<h1>💳 어떤 카드로 결제할까?</h1>
+  <div class="card">
+    <label>결제 금액 (원)</label><input id="f_amt" type="number" inputmode="numeric" value="${form.amount}" oninput="setF('amount',this.value)" placeholder="예: 60000">
+    <label>어디서?</label><select onchange="setF('cat',this.value)">${CATS.map(([k,l])=>`<option value="${k}" ${form.cat===k?'selected':''}>${l}</option>`).join('')}</select>
+    <label>날짜</label><input type="date" value="${form.date}" onchange="setF('date',this.value)">
+    <label class="chk"><input type="checkbox" ${form.sp?'checked':''} onchange="setF('sp',this.checked)">간편결제로 결제 (네이버/카카오/토스/SSG페이…)</label>
+  </div>${out||'<div class="mut" style="text-align:center;padding:20px">금액을 입력하면 카드별 할인액이 계산됩니다</div>'}`;
+}
+function setF(k,v){form[k]=v;render()}
+function record(cid){
+  const tx=mkTx(form.sp),e=calc(cid,tx);
+  S.log.unshift({id:Date.now(),date:tx.date,card:cid,cat:tx.cat,amount:tx.amount,disc:e.disc,pool:e.pool||null,ck:e.disc>0?e.ck||null:null});
+  save();form.amount='';tab='rec';render();
+  toast(`${CARDS.find(c=>c.id===cid).name} 기록됨 (할인 ${won(e.disc)})`);
+}
+function toast(t){const d=document.createElement('div');d.textContent=t;
+  d.style.cssText='position:fixed;left:50%;bottom:76px;transform:translateX(-50%);background:#111;color:#fff;padding:9px 14px;border-radius:20px;font-size:13px;z-index:9';
+  document.body.appendChild(d);setTimeout(()=>d.remove(),1800)}
+
+function vCards(){
+  return`<h1>내 카드 · 실적 입력</h1>`+CARDS.map(c=>{
+    const cs=S.cards[c.id],prev=eff(c.id),ms=monthSpend(c.id),nx=(TH[c.id].find(t=>t>ms));
+    const pools=Object.entries(POOLS[c.id]).map(([pid,P])=>{
+      const lim=P.lim(prev),used=usedAmt(c.id,pid,today()),pct=lim===Infinity||!lim?0:Math.min(100,used/lim*100);
+      return`<div>${P.l}<div class="mut">${lim===Infinity?'한도 없음':lim>0?`한도 ${won(lim)}`:'실적 미달 (혜택 없음)'}</div></div>
+      <input type="number" inputmode="numeric" value="${Math.round(used)}" onchange="setUsed('${c.id}','${pid}',this.value)">
+      ${lim>0&&lim!==Infinity?`<div class="full bar"><i style="width:${pct}%"></i></div>`:''}`}).join('');
+    const cks=[...new Set(RULES[c.id].filter(r=>r.mm).map(r=>r.ck))].map(ck=>
+      `<div>${CKNAME[ck]} 할인 횟수 (이번달)</div><input type="number" value="${cnt(c.id,ck,'m',today())}" onchange="setCnt('${c.id}','${ck}',this.value)">`).join('');
+    return`<div class="card"><h2>${c.name}</h2>
+      <label>전월 실적 (원) — 지난달 실적 인정 사용액</label>
+      <input type="number" inputmode="numeric" value="${cs.prev||''}" placeholder="0" onchange="S.cards['${c.id}'].prev=+this.value||0;save();render()">
+      <label class="chk"><input type="checkbox" ${cs.newIssue?'checked':''} onchange="S.cards['${c.id}'].newIssue=this.checked;save();render()">신규 발급 (등록월+1개월까지 30만원 구간 혜택 보장)</label>
+      <div class="mut" style="margin-top:8px">적용 중인 실적: <b>${won(prev)}</b> · 이번달 누적 사용: <b>${won(ms)}</b>${nx?` · 다음달 다음 구간까지 ${won(nx-ms)}`:' · 최상위 구간 달성'}</div>
+      <details><summary>이번달 사용한 할인 (앱 밖에서 받은 할인은 여기서 수정)</summary>
+        <div class="pool">${pools}${cks}
+          <div>이번달 직접입력 실적 (앱 기록 외)</div><input type="number" value="${cs.spend||0}" onchange="S.cards['${c.id}'].spend=+this.value||0;save();render()">
+        </div></details></div>`}).join('')+
+  `<div class="card"><h2>데이터</h2><div class="row"><button class="ghost" onclick="exp()">백업(JSON 복사)</button><button class="ghost" onclick="imp()">복원</button></div>
+   <div class="mut" style="margin-top:8px">데이터는 이 브라우저에만 저장됩니다. 다른 기기로 옮길 때 백업 → 복원을 사용하세요.</div></div>`;
+}
+function setUsed(cid,pid,v){const P=POOLS[cid][pid],k=per(P,today());
+  const lg=logSum(cid,l=>l.pool===pid&&per(P,l.date)===k);
+  S.cards[cid].base['$'+pid]=Math.max(0,(+v||0)-lg);save();render()}
+function setCnt(cid,ck,v){const n=S.log.filter(l=>l.card===cid&&l.ck===ck&&l.date.slice(0,7)===curMonth()).length;
+  S.cards[cid].base['#'+ck]=Math.max(0,(+v||0)-n);save();render()}
+function exp(){const t=JSON.stringify(S);(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('클립보드에 복사됨')).catch(()=>prompt('아래 내용을 복사하세요',t))}
+function imp(){const t=prompt('백업 JSON을 붙여넣으세요');if(!t)return;try{const o=JSON.parse(t);if(!o.cards||!o.log)throw 0;S=o;save();render();toast('복원 완료')}catch(e){alert('형식이 올바르지 않습니다')}}
+
+function vLog(){
+  const m=S.log.filter(l=>l.date.startsWith(curMonth())),sum=m.reduce((a,l)=>a+l.disc,0);
+  return`<h1>결제 기록</h1><div class="hint">이번달 할인 합계 <b>${won(sum)}</b> · ${m.length}건</div><div class="card">`+
+   (S.log.length?S.log.slice(0,100).map(l=>`<div class="log"><div><b>${CARDS.find(c=>c.id===l.card).name}</b> · ${CATNAME[l.cat]}<div class="mut">${l.date} · ${won(l.amount)}</div></div>
+   <div style="text-align:right;white-space:nowrap"><span style="color:var(--ok);font-weight:700">-${won(l.disc)}</span><br><button class="sm ghost" onclick="delLog(${l.id})">삭제</button></div></div>`).join(''):'<div class="mut">아직 기록이 없어요</div>')+`</div>`;
+}
+function delLog(id){S.log=S.log.filter(l=>l.id!==id);save();render()}
+render();
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('service-worker.js').catch(()=>{}));
+</script>
+</body>
+</html>
