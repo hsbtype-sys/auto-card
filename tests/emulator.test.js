@@ -9,7 +9,8 @@ function freshFirebase(){                       // 기기마다 독립된 SDK �
   fb.initializeApp=cfg=>{const app=orig({...cfg,apiKey:'fake',projectId:'demo-auto-card'});
     app.auth().useEmulator('http://127.0.0.1:9099',{disableWarnings:true});const fsx=app.firestore();fsx.useEmulator('127.0.0.1',8080);
     // vm 안에서 만든 객체는 Object 프로토타입이 달라 Firestore가 거부함(테스트 환경 한정) → 호스트 객체로 옮겨 전달
-    const d0=fsx.doc.bind(fsx);fsx.doc=path=>{const r=d0(path),s0=r.set.bind(r);r.set=data=>s0(data&&data.state&&data.updatedAt?Object.assign({},{state:data.state,updatedAt:data.updatedAt}):data);return r};
+    const d0=fsx.doc.bind(fsx);fsx.doc=path=>{const r=d0(path),s0=r.set.bind(r);r.set=(data,opts)=>{const h={};for(const k of Object.keys(data)){const v=data[k];h[k]=(v&&typeof v==='object'&&v.constructor&&v.constructor.name!=='Object')?v:JSON.parse(JSON.stringify(v))}   // FieldValue 센티넬은 그대로, 일반 객체는 호스트 객체로
+      return opts?s0(h,JSON.parse(JSON.stringify(opts))):s0(h)};return r};
     return app};
   return fb}
 const device=(o={})=>{const fb=freshFirebase();const b=boot({config:'real',firebase:fb,...o});b.fb=fb;return b};
@@ -93,6 +94,80 @@ const clearAuth=()=>fetch('http://127.0.0.1:9099/emulator/v1/projects/demo-auto-
   // 권한 오류가 앱에서 사용자에게 보이는가 (규칙 거부 상황)
   const R=device();await R.fb.auth().createUserWithEmailAndPassword('third@example.com',PW);await waitFor(()=>R.X.user);
   ok('본인 계정 동기화는 정상',await waitFor(()=>/동기화됨/.test(R.X.syncMsg)),R.X.syncMsg);
+
+
+  // ═════════ Gemini 키 동기화 (실제 SDK + 실제 규칙) ═════════
+  const KEY='AIzaSyFAKE_KEY_FOR_TEST_1234567890abcdef',KEY2='AIzaSyOTHER_KEY_FOR_TEST_ABCDEFGH1234567';
+  const gk=async u=>{const d=await serverDoc(u);return d&&d.fields.geminiKey?d.fields.geminiKey.stringValue:undefined};
+  const uidOf=b=>b.fb.auth().currentUser.uid;
+  await clearDb();await clearAuth();
+  const A=device(),B=device();
+  await A.fb.auth().createUserWithEmailAndPassword('k@example.com',PW);const ku=uidOf(A);
+  await waitFor(()=>A.X.user&&/동기화됨/.test(A.X.syncMsg));
+  await A.X.gkSave(KEY);
+  ok('키 저장 → Firestore users/{uid}.geminiKey',await waitFor(async()=>false,0)||(await gk(ku))===KEY);
+  let d=await serverDoc(ku);
+  ok('state는 그대로 있고 키는 state/로그 안에 없음',!!d.fields.state&&!JSON.stringify(d.fields.state).includes(KEY));
+  // ★ 회귀: 상태 저장(pushNow)이 키를 지우지 않는다
+  A.X.form({amount:5e4,cat:'etc',date:'2026-10-05'});A.X.record('shinhan');
+  await waitFor(()=>/동기화됨/.test(A.X.syncMsg)&&!A.X.timer,4000);await sleep(400);
+  ok('★ 결제 기록(상태 저장) 후에도 geminiKey 유지',(await gk(ku))===KEY);
+  A.X.S.cards.shinhan.prev=123000;A.X.save();await sleep(1500);
+  ok('★ 여러 번 저장해도 geminiKey 유지',(await gk(ku))===KEY);
+  { // ★ 자가복구 배제: 캐시가 비어 있으면 앱이 키를 다시 올릴 수 없다. 이때도 상태 저장이 서버의 키를 지우면 안 된다
+    delete A.store['autocard.gemini'];
+    A.X.S.cards.hana.prev=42000;A.X.save();await sleep(1800);
+    ok('★★ 이 기기 캐시가 비어도, 상태 저장이 서버의 geminiKey를 지우지 않음',(await gk(ku))===KEY);
+    ok('   (그리고 캐시는 서버 값으로 복구됨)',await waitFor(()=>A.X.gkGet()===KEY));
+  }
+  // 두 번째 기기: 로그인만 하면 캐시로 들어옴
+  await B.fb.auth().signInWithEmailAndPassword('k@example.com',PW);
+  ok('다른 기기: 로그인 시 키가 localStorage 캐시로 들어옴',await waitFor(()=>B.X.gkGet()===KEY));
+  ok('다른 기기: 화면에 키 노출 없음',!(()=>{B.X.setTab('cards');return B.X.vCards()})().includes(KEY));
+  // 캐시가 비어도 Firestore에서 읽어옴 (spec 4)
+  delete B.store['autocard.gemini'];
+  ok('캐시 없음 → getGeminiKey()가 Firestore에서 읽고 다시 캐시',(await B.X.getGeminiKey())===KEY&&B.X.gkGet()===KEY);
+  // 상태 삭제(초기화)가 서버에서도 실제로 지워지고, 키는 유지
+  A.X.S.cards.shinhan.base['$life']=999;A.X.S.cards.shinhan.base['$charge']=111;A.X.save();await sleep(1500);
+  let st=(await serverDoc(ku)).fields.state.mapValue.fields.cards.mapValue.fields.shinhan.mapValue.fields.base.mapValue.fields||{};
+  ok('사전조건: base["$life"]가 서버에 있음',!!st['$life']);
+  delete A.X.S.cards.shinhan.base['$life'];A.X.save();await sleep(1500);      // 일부 키만 삭제 (빈 맵 교체와 구분되는 경우)
+  st=(await serverDoc(ku)).fields.state.mapValue.fields.cards.mapValue.fields.shinhan.mapValue.fields.base.mapValue.fields||{};
+  ok('★★ 일부 키만 지웠을 때 서버에서도 그 키만 사라짐 (옛 값이 병합으로 남지 않음)',!st['$life']&&!!st['$charge']);
+  A.ctx.confirm=()=>true;A.X.resetMonth();await sleep(1500);
+  st=(await serverDoc(ku)).fields.state.mapValue.fields.cards.mapValue.fields.shinhan.mapValue.fields.base.mapValue.fields||{};
+  ok('★ 초기화로 지운 base 키가 서버에서도 사라짐 (merge가 옛 값을 남기지 않음)',!st['$life']);
+  ok('초기화 후에도 geminiKey 유지',(await gk(ku))===KEY);
+  // 삭제 전파
+  await B.X.gkDelete().catch(()=>{});B.ctx.confirm=()=>true;await B.X.gkDelete();
+  ok('삭제: 서버 geminiKey 비워짐',await (async()=>{for(let i=0;i<40;i++){if((await gk(ku))==='')return true;await sleep(100)}return false})());
+  ok('삭제: 다른 기기 캐시도 비워짐',await waitFor(()=>A.X.gkGet()===''));
+  ok('삭제해도 state는 유지',!!(await serverDoc(ku)).fields.state);
+  // 클라우드가 원본: 로컬과 다르면 클라우드 값으로
+  await A.X.gkSave(KEY2);await waitFor(()=>B.X.gkGet()===KEY2);
+  B.store['autocard.gemini']='STALE_LOCAL_KEY_VALUE_1234567890';
+  await B.fb.auth().signOut();await sleep(200);await B.fb.auth().signInWithEmailAndPassword('k@example.com',PW);
+  ok('로그인 시 클라우드 키가 로컬 캐시를 덮어씀(클라우드가 원본)',await waitFor(()=>B.X.gkGet()===KEY2));
+
+  // 로그아웃 상태에서 넣은 키 → 로그인하면 클라우드로 올라감
+  const Q=device();Q.X.S.cards.hana.prev=1;await Q.X.gkSave(KEY);
+  ok('로그아웃 상태 키는 로컬에만',Q.X.gkGet()===KEY);
+  await Q.fb.auth().createUserWithEmailAndPassword('q@example.com',PW);const qu=uidOf(Q);
+  ok('로그인 후 로컬 키가 클라우드로 업로드됨',await (async()=>{for(let i=0;i<60;i++){if((await gk(qu))===KEY)return true;await sleep(100)}return false})());
+  ok('그 계정의 state도 정상 업로드',!!(await serverDoc(qu)).fields.state);
+  // 키만 있고 state가 없는 문서
+  const Z=device();await Z.fb.auth().createUserWithEmailAndPassword('z@example.com',PW);const zu=uidOf(Z);await waitFor(()=>/동기화됨/.test(Z.X.syncMsg));
+  await fetch(`http://127.0.0.1:8080/v1/projects/demo-auto-card/databases/(default)/documents/users/${zu}?updateMask.fieldPaths=state`,{method:'PATCH',headers:{Authorization:'Bearer owner','Content-Type':'application/json'},body:'{"fields":{}}'});   // state 필드 제거
+  const Z2=device();Z2.X.S.cards.hana.prev=777;Z2.X.save();await Z2.fb.auth().signInWithEmailAndPassword('z@example.com',PW);
+  ok('state가 없는 문서: 로컬 상태를 올려서 복구',await (async()=>{for(let i=0;i<60;i++){const dd=await serverDoc(zu);if(dd&&dd.fields.state)return true;await sleep(100)}return false})());
+  // 규칙: 다른 사용자는 키를 읽을 수 없다
+  const X=device();await X.fb.auth().createUserWithEmailAndPassword('x@example.com',PW);
+  let dn='';try{await X.fb.firestore().doc('users/'+ku).get({source:'server'})}catch(e){dn=e.code}
+  ok('규칙: 다른 사용자는 남의 geminiKey 읽기 거부',dn==='permission-denied',dn);
+  dn='';try{await X.fb.firestore().doc('users/'+ku).set({geminiKey:'hijack'},{merge:true})}catch(e){dn=e.code}
+  ok('규칙: 다른 사용자는 남의 geminiKey 덮어쓰기 거부',dn==='permission-denied'&&(await gk(ku))===KEY2,dn);
+  const {allLogs}=require('./harness');
+  ok('콘솔 출력 어디에도 키 없음',!allLogs.join('\n').includes(KEY)&&!allLogs.join('\n').includes(KEY2));
 
   const f=done('emulator');process.exit(f?1:0);
 })().catch(e=>{console.log('CRASH',e);process.exit(2)});

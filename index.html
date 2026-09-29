@@ -26,7 +26,7 @@ h2{font-size:15px;margin:0 0 8px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
 label{display:block;font-size:12px;color:var(--mut);margin:8px 0 3px}
 input,select,button{font:inherit;color:inherit}
-input[type=number],input[type=date],select{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+input[type=number],input[type=date],input[type=text],input[type=password],select{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
 .row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
 .chk{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;color:var(--tx)}
 .chk input{width:18px;height:18px;flex:none}
@@ -316,16 +316,23 @@ function pushNow(){
   if(!fbUser)return Promise.resolve();
   setSync(navigator.onLine===false?'오프라인 — 온라인이 되면 자동 동기화':'동기화 중…');
   const state=JSON.parse(JSON.stringify(S));
-  return docRef().set({state,updatedAt:firebase.firestore.FieldValue.serverTimestamp()})
+  return docRef().set({state,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{mergeFields:['state','updatedAt']})   // geminiKey 등 다른 필드는 건드리지 않음
+   
     .then(()=>setSync('동기화됨 '+stamp()))
     .catch(e=>setSync('동기화 실패: '+(e.code||e.message)));
 }
 // 원격 데이터를 반영. 로컬 저장만 하고(클라우드 재업로드 없음) 화면을 갱신한다
 function applyRemote(rs){S=sanitize(rs);saveLocal();render()}
 function onRemote(snap){
+  if(snap.exists&&!snap.metadata.hasPendingWrites){       // Gemini 키: Firestore가 원본, localStorage는 캐시
+    const k=snap.data().geminiKey;
+    if(typeof k==='string'){if(k!==gkGet()){gkSetLocal(k);gkRefresh()}}
+    else if(!snap.metadata.fromCache&&gkGet())gkPush();     // 로그아웃 상태에서 넣은 키가 있고 클라우드엔 없음 → 올림
+  }
   if(!snap.exists){if(!snap.metadata.fromCache)pushNow();return}   // 서버 확인 결과 비어 있음 → 로컬 업로드 (캐시만 본 경우엔 대기: 오프라인 신규 기기가 원격을 덮어쓰는 사고 방지)
   if(snap.metadata.hasPendingWrites)return;          // 내가 방금 쓴 변경의 로컬 반영 이벤트 → 무시
   const rs=snap.data().state;
+  if(!rs&&!snap.metadata.fromCache){pushNow();return}    // 키만 있고 state가 없는 문서 → 로컬 상태 업로드
   if(!rs||!rs.cards||!Array.isArray(rs.log))return;
   const rt=rs._ts||0,lt=S._ts||0;
   if(rt>lt){applyRemote(rs);setSync('다른 기기 변경 반영됨 '+stamp())}
@@ -381,6 +388,86 @@ function cloudUI(){
     <div class="row" style="margin-top:8px"><button class="ghost" onclick="cloudSyncNow()">지금 동기화</button><button class="ghost" onclick="cloudLogout()">로그아웃</button></div>`;
 }
 
+// ───────────── Gemini API 키 + 자연어 입력 ─────────────
+// 키는 상태 S(백업·로그)에 넣지 않고 별도 저장. 원본: Firestore users/{uid}.geminiKey, 캐시: localStorage. 키 값은 화면·로그·메시지에 절대 출력하지 않는다
+const GEMINI_LS='autocard.gemini';
+const GEMINI_MODELS=['gemini-3.8-flash','gemini-flash-latest','gemini-3.5-flash'];   // 앞에서부터 시도(모델을 못 찾으면 다음 것)
+const gkGet=()=>{try{return localStorage.getItem(GEMINI_LS)||''}catch(e){return ''}};
+const gkSetLocal=v=>{try{v?localStorage.setItem(GEMINI_LS,v):localStorage.removeItem(GEMINI_LS)}catch(e){}};
+function gkRefresh(){const el=document.getElementById('gkst');if(el)el.textContent=gkGet()?'저장됨  ••••••••':'미등록'}
+function gkPush(){if(!fbUser)return Promise.resolve();return docRef().set({geminiKey:gkGet()},{merge:true}).catch(e=>setSync('키 클라우드 저장 실패: '+(e.code||'오류')))}
+async function gkSave(v){
+  v=(v||'').trim();gkSetLocal(v);gkRefresh();
+  if(fbUser){try{await docRef().set({geminiKey:v},{merge:true});return'cloud'}catch(e){return'local:'+(e.code||'error')}}
+  return'local';
+}
+async function gkSaveUI(){
+  const el=document.getElementById('gk'),v=((el&&el.value)||'').trim();
+  if(!v)return alert('API 키를 붙여넣어 주세요.');
+  if(v.length<20||/\s/.test(v))return alert('API 키 형식이 올바르지 않습니다.');
+  const r=await gkSave(v);el.value='';
+  toast(r==='cloud'?'API 키 저장됨 (다른 기기에도 동기화)':r==='local'?'API 키 저장됨 (이 기기만 — 로그인하면 동기화)':'이 기기에만 저장됨 (클라우드 저장 실패)');
+}
+async function gkDelete(){
+  if(!gkGet()&&!fbUser)return;
+  if(!confirm('저장된 Gemini API 키를 삭제할까요? (로그인 상태면 클라우드에서도 삭제)'))return;
+  await gkSave('');toast('API 키를 삭제했습니다');
+}
+// 캐시 우선, 없으면 Firestore에서 읽기
+async function getGeminiKey(){
+  const c=gkGet();if(c)return c;
+  if(fbUser){try{const snap=await docRef().get();const k=snap.exists&&snap.data().geminiKey;if(typeof k==='string'&&k){gkSetLocal(k);return k}}catch(e){}}
+  return'';
+}
+const DOW=['일','월','화','수','목','금','토'];
+async function parseNaturalLanguage(text){
+  const key=await getGeminiKey();
+  if(!key)throw new Error('Gemini API 키가 없습니다. 내 카드 탭 → 데이터에서 키를 등록하세요.');
+  text=String(text||'').trim().slice(0,300);
+  if(!text)throw new Error('결제 내용을 입력하세요. 예: 어제 이마트 6만원 SSG페이');
+  const t0=today(),dw=DOW[new Date(t0+'T00:00').getDay()];
+  const prompt=`오늘은 ${t0} (${dw}요일)입니다. 아래 카드 결제 설명을 분석해 JSON 객체 하나만 출력하세요.
+필드: {"amount": 결제금액(원, 정수. 모르면 null), "category": 아래 id 중 하나(애매하면 "etc"), "date": "YYYY-MM-DD"(언급 없으면 오늘), "simplePay": 네이버페이·카카오페이·토스페이·SSG페이 등 간편결제 언급 시 true 아니면 false, "overseas": 해외 결제면 true 아니면 false, "memberType": 멤버십 결제일 때 월 정기면 "m" 연 결제면 "y" (해당 없으면 null), "charger": 전기차 충전 사업자 이름(원문 그대로, 없으면 null)}
+category id: ${CATS.map(([k,l])=>k+'='+l.replace(/^\S+\s/,'')).join(' / ')}
+결제 설명: <<<${text}>>>`;
+  let lastErr='';
+  for(const m of GEMINI_MODELS){
+    const ac=new AbortController(),to=setTimeout(()=>ac.abort(),20000);let res;
+    try{res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`,{method:'POST',signal:ac.signal,
+      headers:{'Content-Type':'application/json','x-goog-api-key':key},
+      body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:'application/json',temperature:0}})})}
+    catch(e){clearTimeout(to);lastErr='네트워크 오류로 분석하지 못했습니다.';break}
+    clearTimeout(to);
+    if(res.status===404){lastErr='사용 가능한 Gemini 모델을 찾지 못했습니다.';continue}
+    if(res.status===400||res.status===401||res.status===403)throw new Error('API 키가 올바르지 않거나 권한이 없습니다. 키를 다시 등록해 보세요.');
+    if(res.status===429)throw new Error('Gemini 사용 한도를 초과했습니다. 잠시 후 다시 시도하세요.');
+    if(!res.ok){lastErr='Gemini 응답 오류 ('+res.status+')';break}
+    let raw;try{const j=await res.json();raw=j.candidates[0].content.parts[0].text}catch(e){throw new Error('Gemini 응답을 해석하지 못했습니다.')}
+    return validateNL(raw);
+  }
+  throw new Error(lastErr||'분석하지 못했습니다.');
+}
+// 모델 출력은 신뢰하지 않고 값을 모두 검증해서 폼에 반영 가능한 형태로 만든다
+function validateNL(raw){
+  let o;try{o=JSON.parse(String(raw).replace(/^\s*```(?:json)?|```\s*$/g,'').trim())}catch(e){throw new Error('Gemini 응답을 해석하지 못했습니다.')}
+  if(!o||typeof o!=='object')throw new Error('Gemini 응답을 해석하지 못했습니다.');
+  const amt=Math.round(Number(o.amount));
+  const cat=CATNAME[o.category]!==undefined?o.category:'etc';
+  let date=today();if(typeof o.date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(o.date)&&!isNaN(new Date(o.date+'T00:00')))date=o.date;
+  let op='';if(cat==='charge'&&typeof o.charger==='string'){const n=x=>x.toLowerCase().replace(/[\s()·\-]/g,''),q=n(o.charger);
+    if(q.length>=2){const i=CHARGERS.findIndex(c=>{const cn=n(c[0]);return cn.includes(q)||q.includes(cn)});if(i>=0)op=String(i)}}
+  return{amount:amt>0&&amt<=1e8?amt:'',cat,date,sp:o.simplePay===true,ov:o.overseas===true,pt:o.memberType==='y'?'y':'m',op};
+}
+let nlText='',nlBusy=false;
+function nlStatus(m){const el=document.getElementById('nlst');if(el)el.textContent=m}
+async function nlRun(){
+  if(nlBusy)return;nlBusy=true;nlStatus('분석 중…');
+  try{const r=await parseNaturalLanguage(nlText);Object.assign(form,r);render();
+    nlStatus(`인식: ${CATNAME[r.cat]} · ${r.amount?won(r.amount):'금액 없음'} · ${r.date}${r.sp?' · 간편결제':''}${r.ov?' · 해외':''} — 확인 후 기록하세요`)}
+  catch(e){nlStatus(e.message||'분석하지 못했습니다.')}
+  finally{nlBusy=false}
+}
+
 // ───────────── 화면 ─────────────
 function render(){
   document.getElementById('nav').innerHTML=[['rec','💡 추천'],['cards','💳 내 카드'],['log','🧾 기록']]
@@ -424,6 +511,9 @@ function vRec(){
   }
   return`<h1>💳 어떤 카드로 결제할까?</h1>
   <div class="card">
+    <label>말로 입력 (Gemini)</label>
+    <div class="row"><input id="nl_txt" type="text" value="${nlText.replace(/"/g,'&quot;')}" placeholder="예: 어제 이마트 6만원 SSG페이" oninput="nlText=this.value" onkeydown="if(event.key==='Enter')nlRun()"><button onclick="nlRun()" style="flex:none">분석</button></div>
+    <div id="nlst" class="mut" style="margin-top:4px"></div>
     <label>결제 금액 (원)</label><input id="f_amt" type="number" inputmode="numeric" value="${form.amount}" oninput="setF('amount',this.value)" placeholder="예: 60000">
     <label>어디서?</label><select onchange="setF('cat',this.value)">${CATS.map(([k,l])=>`<option value="${k}" ${form.cat===k?'selected':''}>${l}</option>`).join('')}</select>
     <label>날짜</label><input type="date" value="${form.date}" onchange="setF('date',this.value)">
@@ -477,6 +567,10 @@ function vCards(){
        <button class="ghost" onclick="resetMonth()">이번달 기록·사용량 초기화</button>
        <button class="ghost" onclick="clearLog()">결제 기록 전체 삭제</button>
        <button class="ghost" style="color:var(--bad)" onclick="resetAll()">모든 데이터 초기화</button></div></details>
+   <div style="margin-top:14px"><label>Gemini API 키 (말로 입력용)</label>
+     <div id="gkst" class="mut">${gkGet()?'저장됨  ••••••••':'미등록'}</div>
+     <div class="row" style="margin-top:4px"><input id="gk" type="password" autocomplete="off" placeholder="${gkGet()?'••••••••':'API 키 붙여넣기'}"><button onclick="gkSaveUI()" style="flex:none">저장</button><button class="ghost" onclick="gkDelete()" style="flex:none">삭제</button></div>
+     <div class="mut" style="margin-top:4px">로그인 상태면 내 계정에만 저장되어 다른 기기에서도 쓰입니다. 백업(JSON)에는 포함되지 않습니다.</div></div>
    ${cloudUI()}</div>`;
 }
 // 초기화: 실적(전월 실적·신규발급 등 카드 설정)은 유지하고 이번달 결제 기록과 사용량만 비운다
