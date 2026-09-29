@@ -2,7 +2,7 @@ const {boot,ok,done,sleep,allLogs}=require('./harness');
 const KEY='AIzaSyFAKE_KEY_FOR_TEST_1234567890abcdef';
 const jres=(status,body)=>({status,ok:status>=200&&status<300,json:async()=>body});
 const gem=obj=>jres(200,{candidates:[{content:{parts:[{text:typeof obj==='string'?obj:JSON.stringify(obj)}]}}]});
-function app(fetchImpl,store={}){const calls=[];const f=async(url,init)=>{calls.push({url,init});return fetchImpl(url,init,calls.length)};const b=boot({fetch:f,store});b.calls=calls;return b}
+function app(fetchImpl,store={}){const calls=[];const f=async(url,init)=>{calls.push({url,init});return fetchImpl(url,init,calls.length)};const b=boot({fetch:f,store});b.X.setRetryMs(5);b.calls=calls;return b}
 const today=()=>new Date().toLocaleDateString('sv');
 
 (async()=>{
@@ -61,12 +61,26 @@ const today=()=>new Date().toLocaleDateString('sv');
   b=boot({fetch:async()=>{throw new Error('boom '+KEY)}});await b.X.gkSave(KEY);
   let e='';try{await b.X.parseNaturalLanguage('x')}catch(er){e=er.message}
   ok('네트워크 오류: 사용자 메시지, 키 미포함',/네트워크/.test(e)&&!e.includes(KEY),e);
-  for(const [st,re] of [[400,/키가 올바르지/],[401,/키가 올바르지/],[403,/키가 올바르지/],[429,/한도/],[500,/응답 오류/]]){
+  for(const [st,re] of [[400,/키가 올바르지/],[401,/키가 올바르지/],[403,/키가 올바르지/],[429,/한도/],[500,/혼잡/],[503,/혼잡/],[418,/응답 오류/]]){
     const x=app(()=>jres(st,{error:{message:'API key not valid '+KEY}}));await x.X.gkSave(KEY);let m='';try{await x.X.parseNaturalLanguage('x')}catch(er){m=er.message}
     ok(`HTTP ${st} → 안내 메시지, 키 미포함`,re.test(m)&&!m.includes(KEY),m)}
+  // ── 503 등 일시 오류: 재시도 → 모델 전환 ──
+  { let n=0;const x=app(()=>++n===1?jres(503,{}):gem({amount:2000,category:'cvs'}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
+    ok('503 한 번 → 같은 모델 재시도로 성공',q.amount===2000&&x.calls.length===2&&x.calls[0].url===x.calls[1].url)}
+  { let n=0;const x=app(()=>++n<=2?jres(503,{}):gem({amount:3000,category:'cvs'}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
+    ok('503 두 번(첫 모델 포기) → 다음 모델로 성공',q.amount===3000&&x.calls.length===3&&x.calls[2].url.includes('gemini-3.5-flash:'),x.calls.map(c=>c.url.split('/models/')[1]).join(','))}
+  { const x=app(()=>jres(503,{error:{message:'overloaded '+KEY}}));await x.X.gkSave(KEY);let m='';const st=[];try{await x.X.parseNaturalLanguage('x',s=>st.push(s))}catch(er){m=er.message}
+    ok('모든 모델 503 → 혼잡 안내(키 미포함), 총 8회 시도',/혼잡/.test(m)&&!m.includes(KEY)&&x.calls.length===8,x.calls.length+' '+m);
+    ok('재시도 중 상태 문구 콜백 호출',st.some(t=>/다시 시도/.test(t)))}
+  { let n=0;const x=app(()=>++n===1?jres(429,{}):gem({amount:4000,category:'cvs'}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
+    ok('429(한도) → 재시도 없이 바로 다음 모델로',q.amount===4000&&x.calls.length===2&&x.calls[0].url!==x.calls[1].url)}
+  { const x=app(()=>jres(400,{}));await x.X.gkSave(KEY);try{await x.X.parseNaturalLanguage('x')}catch(e){}
+    ok('400/403(키 문제)은 재시도하지 않음',x.calls.length===1)}
+  { let n=0;const x=app(async()=>{if(++n===1)throw new Error('net');return gem({amount:5000,category:'cvs'})});await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
+    ok('일시적 네트워크 오류도 1회 재시도',q.amount===5000&&n===2)}
   { let n=0;const x=app((u)=>{n++;return u.includes('gemini-3.8-flash')?jres(404,{}):gem({amount:1000,category:'cvs'})});await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
-    ok('첫 모델 404 → 다음 모델로 자동 대체',q.amount===1000&&n===2&&x.calls[1].url.includes('gemini-flash-latest'))}
-  { const x=app(()=>jres(404,{}));await x.X.gkSave(KEY);let m='';try{await x.X.parseNaturalLanguage('x')}catch(er){m=er.message}ok('모든 모델 404 → 에러',/모델을 찾지 못/.test(m)&&x.calls.length===3)}
+    ok('첫 모델 404 → 다음 모델로 자동 대체',q.amount===1000&&n===2&&x.calls[1].url.includes('gemini-3.5-flash:'))}
+  { const x=app(()=>jres(404,{}));await x.X.gkSave(KEY);let m='';try{await x.X.parseNaturalLanguage('x')}catch(er){m=er.message}ok('모든 모델 404 → 에러',/모델을 찾지 못/.test(m)&&x.calls.length===4)}
   { const x=app(()=>gem({}));let m='';try{await x.X.parseNaturalLanguage('x')}catch(er){m=er.message}ok('키 없음 → 에러(호출 안 함)',/키가 없습니다/.test(m)&&x.calls.length===0)}
   { const x=app(()=>gem({}));await x.X.gkSave(KEY);let m='';try{await x.X.parseNaturalLanguage('   ')}catch(er){m=er.message}ok('빈 입력 → 에러(호출 안 함)',/입력하세요/.test(m)&&x.calls.length===0)}
   { const x=app(()=>gem({amount:1,category:'cvs'}));await x.X.gkSave(KEY);await x.X.parseNaturalLanguage('가'.repeat(5000));ok('입력은 300자로 제한',JSON.parse(x.calls[0].init.body).contents[0].parts[0].text.split('가').length-1<=300)}
