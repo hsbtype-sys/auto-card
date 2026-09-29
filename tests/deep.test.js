@@ -162,8 +162,8 @@ b=mk({shinhan:6e5,hana:6e5,samsung:6e5});{const S=b.X.S;S.monthKey='2026-08';
  for(const [cat] of b.X.CATS)for(const sp of[false,true])for(const ov of[false,true])for(const pt of['m','y'])for(const op of['','0','14'])for(const amount of['',0,'1','60000']){
   b.X.form({cat,sp,ov,pt,op,amount});
   try{const h=b.X.vRec();if(!h||h.includes('undefined')||h.includes('NaN')){bad++;console.log('BADHTML',cat,sp,ov,pt,op,amount)}cnt++}catch(e){bad++;console.log('THROW vRec',cat,e.message)}}
- for(const t of['rec','cards','log']){b.X.setTab(t);try{b.X.render()}catch(e){bad++;console.log('THROW render',t,e.message)}}
- const html=b.X.vCards()+b.X.vLog();
+ for(const t of['rec','cards','log','data']){b.X.setTab(t);try{b.X.render()}catch(e){bad++;console.log('THROW render',t,e.message)}}
+ const html=b.X.vCards()+b.X.vData()+b.X.vLog();
  ok(`화면 ${cnt}개 조합 렌더: 예외/undefined/NaN 없음`,bad===0&&!html.includes('undefined')&&!html.includes('NaN'));}
 
 // ── I. 손상/이상 데이터 방어 ──

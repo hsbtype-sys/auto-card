@@ -42,6 +42,7 @@ button.sm{padding:5px 9px;font-size:12px}
 .menu{position:absolute;right:10px;top:calc(100% - 4px);min-width:210px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:6px}
 .menu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:transparent;color:var(--tx);border-radius:10px;padding:13px 12px;font-size:15px;font-weight:600}
 .menu button.on{background:var(--soft);color:var(--pri)}
+.menu button.sep{margin-top:6px;border-top:1px solid var(--line);border-radius:0 0 10px 10px;padding-top:15px}
 .scrim{position:fixed;inset:0;z-index:15;background:rgba(0,0,0,.18)}
 [hidden]{display:none!important}
 .res{border:2px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px;background:var(--card)}
@@ -502,7 +503,7 @@ async function nlRun(){
 }
 
 // ───────────── 화면 ─────────────
-const TABS=[['rec','💡 추천'],['cards','💳 내 카드'],['log','🧾 기록']];
+const TABS=[['rec','💡 추천'],['cards','💳 내 카드'],['log','🧾 기록'],['data','⚙️ 데이터 · 계정']];
 let menuOpen=false;
 function setMenu(v){menuOpen=v;const m=document.getElementById('menu'),sc=document.getElementById('scrim'),b=document.getElementById('mbtn');
   m.hidden=!v;sc.hidden=!v;if(b.setAttribute)b.setAttribute('aria-expanded',String(v));if(b.classList)b.classList.toggle('open',v)}
@@ -510,10 +511,10 @@ const toggleMenu=()=>setMenu(!menuOpen),closeMenu=()=>setMenu(false);
 function go(k){tab=k;closeMenu();render();if(window.scrollTo)window.scrollTo(0,0)}
 window.addEventListener('keydown',e=>{if(e.key==='Escape'&&menuOpen)closeMenu()});
 function render(){
-  document.getElementById('menu').innerHTML=TABS.map(([k,l])=>`<button role="menuitem" class="${tab===k?'on':''}" onclick="go('${k}')">${l}</button>`).join('');
+  document.getElementById('menu').innerHTML=TABS.map(([k,l])=>`<button role="menuitem" class="${tab===k?'on':''}${k==='data'?' sep':''}" onclick="go('${k}')">${l}</button>`).join('');
   document.getElementById('pg').textContent=(TABS.find(t=>t[0]===tab)||['',''])[1].replace(/^\S+\s/,'');
   const el=document.getElementById('app');
-  const fn={rec:vRec,cards:vCards,log:vLog}[tab];
+  const fn={rec:vRec,cards:vCards,log:vLog,data:vData}[tab];
   const keep=document.activeElement&&document.activeElement.id;
   el.innerHTML=rolloverBanner()+fn();
   if(keep){const n=document.getElementById(keep);if(n){n.focus();try{n.setSelectionRange(n.value.length,n.value.length)}catch(e){}}}
@@ -597,19 +598,26 @@ function vCards(){
       <details><summary>이번달 사용한 할인 (앱 밖에서 받은 할인은 여기서 수정)</summary>
         <div class="pool">${pools}${cks}
           <div>이번달 직접입력 실적 (앱 기록 외)</div><input type="number" value="${cs.spend||0}" onchange="S.cards['${c.id}'].spend=+this.value||0;save();render()">
-        </div></details></div>`}).join('')+
-  `<div class="card"><h2>데이터</h2><div class="row"><button class="ghost" onclick="exp()">백업(JSON 복사)</button><button class="ghost" onclick="imp()">복원</button></div>
-   <details><summary>초기화 · 삭제</summary>
-     <div class="mut" style="margin:8px 0">로그인 상태면 다른 기기에도 똑같이 반영됩니다. 되돌릴 수 없으니 필요하면 먼저 백업하세요.</div>
-     <div class="row" style="flex-wrap:wrap">
-       <button class="ghost" onclick="resetMonth()">이번달 기록·사용량 초기화</button>
-       <button class="ghost" onclick="clearLog()">결제 기록 전체 삭제</button>
-       <button class="ghost" style="color:var(--bad)" onclick="resetAll()">모든 데이터 초기화</button></div></details>
-   <div style="margin-top:14px"><label>Gemini API 키 (말로 입력용)</label>
+        </div></details></div>`}).join('');
+}
+// 데이터 · 계정 화면 (삼선 메뉴 맨 아래)
+function vData(){
+  return`<h1>데이터 · 계정</h1>
+  <div class="card"><h2>계정 · 동기화</h2>${cloudUI()}</div>
+  <div class="card"><h2>말로 입력 (Gemini)</h2>
+     <label>Gemini API 키</label>
      <div id="gkst" class="mut">${gkGet()?'저장됨  ••••••••':'미등록'}</div>
      <div class="row" style="margin-top:4px"><input id="gk" type="password" autocomplete="off" placeholder="${gkGet()?'••••••••':'API 키 붙여넣기'}"><button onclick="gkSaveUI()" style="flex:none">저장</button><button class="ghost" onclick="gkDelete()" style="flex:none">삭제</button></div>
-     <div class="mut" style="margin-top:4px">로그인 상태면 내 계정에만 저장되어 다른 기기에서도 쓰입니다. 백업(JSON)에는 포함되지 않습니다.</div></div>
-   ${cloudUI()}</div>`;
+     <div class="mut" style="margin-top:6px">로그인 상태면 내 계정에만 저장되어 다른 기기에서도 쓰입니다. 백업(JSON)에는 포함되지 않습니다.</div></div>
+  <div class="card"><h2>백업 · 초기화</h2>
+     <div class="row"><button class="ghost" onclick="exp()">백업(JSON 복사)</button><button class="ghost" onclick="imp()">복원</button></div>
+     <details><summary>초기화 · 삭제</summary>
+       <div class="mut" style="margin:8px 0">로그인 상태면 다른 기기에도 똑같이 반영됩니다. 되돌릴 수 없으니 필요하면 먼저 백업하세요.</div>
+       <div class="row" style="flex-wrap:wrap">
+         <button class="ghost" onclick="resetMonth()">이번달 기록·사용량 초기화</button>
+         <button class="ghost" onclick="clearLog()">결제 기록 전체 삭제</button>
+         <button class="ghost" style="color:var(--bad)" onclick="resetAll()">모든 데이터 초기화</button></div></details>
+     ${cloudReady()?'':'<div class="mut" style="margin-top:8px">데이터는 이 기기(브라우저)에 저장됩니다. 다른 기기로 옮길 때 백업 → 복원을 사용하세요.</div>'}</div>`;
 }
 // 초기화: 실적(전월 실적·신규발급 등 카드 설정)은 유지하고 이번달 결제 기록과 사용량만 비운다
 function resetMonth(){

@@ -123,7 +123,7 @@ const clearAuth=()=>fetch('http://127.0.0.1:9099/emulator/v1/projects/demo-auto-
   // 두 번째 기기: 로그인만 하면 캐시로 들어옴
   await B.fb.auth().signInWithEmailAndPassword('k@example.com',PW);
   ok('다른 기기: 로그인 시 키가 localStorage 캐시로 들어옴',await waitFor(()=>B.X.gkGet()===KEY));
-  ok('다른 기기: 화면에 키 노출 없음',!(()=>{B.X.setTab('cards');return B.X.vCards()})().includes(KEY));
+  ok('다른 기기: 화면에 키 노출 없음',!(()=>{B.X.setTab('data');return B.X.vData()})().includes(KEY));
   // 캐시가 비어도 Firestore에서 읽어옴 (spec 4)
   delete B.store['autocard.gemini'];
   ok('캐시 없음 → getGeminiKey()가 Firestore에서 읽고 다시 캐시',(await B.X.getGeminiKey())===KEY&&B.X.gkGet()===KEY);
