@@ -545,7 +545,7 @@ function vRec(){
       if(need)out+=`<div class="hint">전월 실적을 채우면 혜택이 열리는 카드: <b>${need.c.name}</b> (${won(need.gap)} 부족)</div>`;
     }
   }
-  return`<h1>💳 어떤 카드로 결제할까?</h1>
+  return`<h1>어떤 카드로 결제할까?</h1>
   <div class="card">
     <label>말로 입력 (Gemini)</label>
     <div class="row"><input id="nl_txt" type="text" value="${nlText.replace(/"/g,'&quot;')}" placeholder="예: 어제 이마트 6만원 SSG페이" oninput="nlText=this.value" onkeydown="if(event.key==='Enter')nlRun()"><button onclick="nlRun()" style="flex:none">분석</button></div>
