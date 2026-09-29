@@ -1,0 +1,23 @@
+// 상단 헤더 + 삼선 메뉴 이동 (하단 탭바 제거)
+const {boot,ok,done,HTML}=require('./harness');
+const fs=require('fs'),path=require('path');
+const b=boot();const els=b.dev.els;
+b.X.render();
+ok('메뉴에 3개 항목 (추천/내 카드/기록)',(els.menu.innerHTML.match(/<button/g)||[]).length===3&&/추천/.test(els.menu.innerHTML)&&/내 카드/.test(els.menu.innerHTML)&&/기록/.test(els.menu.innerHTML));
+ok('현재 화면 항목 강조(on), 헤더에 현재 화면 이름',/class="on"[^>]*onclick="go\('rec'\)"/.test(els.menu.innerHTML)&&els.pg.textContent==='추천',els.pg.textContent);
+ok('처음엔 메뉴 닫힘',els.menu.hidden===true||els.menu.hidden===undefined);
+const run=c=>require('vm').runInContext(c,b.ctx);
+run('toggleMenu()');ok('삼선 클릭 → 메뉴 열림 + 배경막',els.menu.hidden===false&&els.scrim.hidden===false);
+run('toggleMenu()');ok('다시 누르면 닫힘',els.menu.hidden===true&&els.scrim.hidden===true);
+run('toggleMenu()');run("go('cards')");
+ok('항목 선택 → 화면 이동 + 메뉴 자동 닫힘',run('tab')==='cards'&&els.menu.hidden===true&&els.pg.textContent==='내 카드');
+ok('이동한 화면이 실제로 렌더됨',/내 카드 · 실적 입력/.test(els.app.innerHTML));
+run("go('log')");ok('기록 화면 이동',/결제 기록/.test(els.app.innerHTML)&&els.pg.textContent==='기록');
+run("go('rec')");ok('추천 화면 복귀',/어떤 카드로 결제할까/.test(els.app.innerHTML));
+ok('하단 탭바(nav) 제거됨',!/<nav\b/.test(HTML)&&!/nav\{position:fixed/.test(HTML));
+ok('헤더에 앱 이름 + 삼선 버튼(접근성 라벨)',/<header class="top">/.test(HTML)&&/카드픽/.test(HTML.match(/<header[\s\S]*?<\/header>/)[0])&&/aria-label="메뉴"/.test(HTML));
+const man=JSON.parse(fs.readFileSync(path.join(__dirname,'..','manifest.json'),'utf8'));
+ok('manifest 이름이 앱 이름과 일치',/카드픽/.test(man.name)&&man.short_name==='카드픽');
+ok('<title>/iOS 앱 이름 일치',/<title>카드픽<\/title>/.test(HTML)&&/apple-mobile-web-app-title" content="카드픽"/.test(HTML));
+ok('내용이 하단 탭바 여백(90px)을 더 이상 안 씀',!/padding:16px 16px 90px/.test(HTML));
+process.exit(done('nav')?1:0);

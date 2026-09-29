@@ -1,6 +1,6 @@
 {
-  "name": "Auto Card",
-  "short_name": "Auto Card",
+  "name": "카드픽 - 결제 카드 추천",
+  "short_name": "카드픽",
   "description": "결제할 때 가장 할인 큰 카드를 추천해 주는 앱",
   "start_url": "./index.html",
   "scope": "./",
