@@ -42,4 +42,8 @@ ok('인쇄 스타일: 헤더/메뉴 숨김, 밝은 색상 강제, A4',/@media pr
  cb&&cb();ok('인쇄 후 제목 복원',x.ctx.document.title==='카드픽')}
 {const x=boot();x.ctx.window.addEventListener=()=>{};x.ctx.window.removeEventListener=()=>{};x.ctx.window.print=()=>{throw new Error('no')};x.ctx.document.title='카드픽';
  require('vm').runInContext('printBenefits()',x.ctx);ok('인쇄 미지원 브라우저: 앱은 안 죽고 안내',x.dev.alerts.length===1&&x.ctx.document.title==='카드픽')}
+// 카드사 대표색: 신한 블루 / 하나 그린(보라 아님) / 삼성 블루
+ok('배지 색: 신한 #0046ff, 하나 #078a5d, 삼성 #1428a0',/\.tag\.sh\{background:#0046ff\}/.test(HTML)&&/\.tag\.hn\{background:#078a5d\}/.test(HTML)&&/\.tag\.ss\{background:#1428a0\}/.test(HTML));
+ok('하나 배지에 이전 보라색(#7c3aed) 없음',!/\.tag\.hn\{background:#7c3aed\}/.test(HTML));
+ok('세 카드 배지 색이 서로 다름',new Set(['0046ff','078a5d','1428a0']).size===3);
 process.exit(done('benefits')?1:0);
