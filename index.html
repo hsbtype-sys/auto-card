@@ -503,7 +503,7 @@ async function nlRun(){
 }
 
 // ───────────── 화면 ─────────────
-const TABS=[['rec','💡 추천'],['cards','💳 내 카드'],['log','🧾 기록'],['data','⚙️ 데이터 · 계정']];
+const TABS=[['rec','💡 결제카드분석'],['cards','💳 내 카드'],['log','🧾 기록'],['data','⚙️ 데이터 · 계정']];
 let menuOpen=false;
 function setMenu(v){menuOpen=v;const m=document.getElementById('menu'),sc=document.getElementById('scrim'),b=document.getElementById('mbtn');
   m.hidden=!v;sc.hidden=!v;if(b.setAttribute)b.setAttribute('aria-expanded',String(v));if(b.classList)b.classList.toggle('open',v)}
