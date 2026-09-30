@@ -95,7 +95,7 @@ const today=()=>new Date().toLocaleDateString('sv');
   { const x=app(()=>jres(404,{}));await x.X.gkSave(KEY);let m='';try{await x.X.parseNaturalLanguage('x')}catch(er){m=er.message}ok('모든 모델 404 → 에러',/모델을 찾지 못/.test(m)&&x.calls.length===6)}
   { const x=app(()=>gem({}));let m='';try{await x.X.parseNaturalLanguage('x')}catch(er){m=er.message}ok('키 없음 → 에러(호출 안 함)',/키가 없습니다/.test(m)&&x.calls.length===0)}
   { const x=app(()=>gem({}));await x.X.gkSave(KEY);let m='';try{await x.X.parseNaturalLanguage('   ')}catch(er){m=er.message}ok('빈 입력 → 에러(호출 안 함)',/입력하세요/.test(m)&&x.calls.length===0)}
-  { const x=app(()=>gem({amount:1,category:'cvs'}));await x.X.gkSave(KEY);await x.X.parseNaturalLanguage('가'.repeat(5000));ok('입력은 300자로 제한',JSON.parse(x.calls[0].init.body).contents[0].parts[0].text.split('가').length-1<=300)}
+  { const x=app(()=>gem({amount:1,category:'cvs'}));await x.X.gkSave(KEY);await x.X.parseNaturalLanguage('가'.repeat(5000));{const t=JSON.parse(x.calls[0].init.body).contents[0].parts[0].text;const seg=t.slice(t.indexOf('<<<')+3,t.lastIndexOf('>>>'));ok('입력은 300자로 제한 (사용자 입력 구간만 측정)',seg.length===300&&/^가+$/.test(seg))}}
 
   // UI 흐름 (nlRun → 폼 반영)
   b=app(()=>gem({amount:60000,category:'mart',date:'2026-10-03',simplePay:true}));await b.X.gkSave(KEY);

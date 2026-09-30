@@ -44,6 +44,7 @@ b.X.record('shinhan');ok('신한 기록: 직접결제 5000',b.X.S.log[0].disc===
 b.X.form({sp:false});const j1=JSON.stringify(b.X.rank().map(x=>[x.c.id,x.disc,x.sp]));b.X.form({sp:true});const j2=JSON.stringify(b.X.rank().map(x=>[x.c.id,x.disc,x.sp]));ok('form.sp 값과 무관하게 동일 결과',j1===j2,j1+' vs '+j2);
 // 랜덤 회귀: rank의 모든 결과는 calc(sp=false/true) 중 최대
 {let bad=0;for(const cat of b.X.CATS.map(c=>c[0]))for(const amount of[5000,10000,60000]){const q=mk(ALL);q.X.form({cat,amount,date:SAT,ov:false,pt:'m',op:''});
-  for(const x of q.X.rank()){const t=q.X.mkTx(false);const m=Math.max(q.X.calc(x.c.id,{...t,sp:false}).disc,q.X.calc(x.c.id,{...t,sp:true}).disc);if(x.disc!==m)bad++}}
+  for(const x of q.X.rank()){const t=q.X.mkTx(false);const m=Math.max(q.X.calc(x.c.id,{...t,sp:false}).disc,q.X.calc(x.c.id,{...t,sp:true}).disc);const expected=cat==='costco'?0:m;   // 코스트코는 현대카드만 결제 가능 → 내 카드는 전부 결제 불가(0)
+   if(x.disc!==expected||(cat==='costco'&&!x.blocked))bad++}}
  ok('모든 카테고리×금액: 카드별 결과 = 두 결제방식 중 최대',bad===0,'bad='+bad)}
 process.exit(done('rank')?1:0);
