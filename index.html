@@ -45,6 +45,27 @@ button.sm{padding:5px 9px;font-size:12px}
 .menu button.sep{margin-top:6px;border-top:1px solid var(--line);border-radius:0 0 10px 10px;padding-top:15px}
 .scrim{position:fixed;inset:0;z-index:15;background:rgba(0,0,0,.18)}
 [hidden]{display:none!important}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;margin-right:6px;color:#fff;vertical-align:middle;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.tag.sh{background:#0ea5e9}.tag.hn{background:#7c3aed}.tag.ss{background:#475569}
+.brow{padding:9px 0;border-top:1px solid var(--line)}.brow:first-of-type{border-top:0}
+.bh{font-weight:700;font-size:14px;margin-bottom:3px}
+.bl{display:flex;align-items:flex-start;gap:2px;font-size:13px;margin:3px 0}.bl .tag{flex:none;margin-top:1px}
+.bul{margin:10px 0 0;padding-left:18px;font-size:13px}.bul li{margin:5px 0}
+.bn{margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);font-size:12px;color:var(--mut)}.bn ul{margin:4px 0 0;padding-left:18px}.bn li{margin:3px 0}
+.printhead{display:none}
+@media print{
+  @page{size:A4;margin:12mm}
+  :root{--bg:#fff;--card:#fff;--tx:#000;--mut:#4b5563;--line:#d1d5db;--pri:#1d4ed8;--soft:#eef2ff}
+  html,body{background:#fff!important;color:#000}
+  .top,.scrim,.no-print,.toast{display:none!important}
+  main{max-width:none;padding:0}
+  .card{break-inside:avoid;box-shadow:none;border:1px solid #d1d5db;padding:10px 12px;margin-bottom:8px}
+  .card.big{break-inside:auto}
+  body{font-size:13px}.brow{padding:6px 0}.bl{margin:2px 0}
+  .brow{break-inside:avoid}
+  .printhead{display:block;font-size:12px;color:#4b5563;margin-bottom:6px}
+  h1{font-size:20px;margin:0 0 4px}
+}
 .res{border:2px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px;background:var(--card)}
 .res.best{border-color:var(--ok)}
 .res .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
@@ -253,7 +274,8 @@ let S;try{S=sanitize(JSON.parse(localStorage.getItem(KEY)))}catch(e){S=blank()}
 const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
 // S._ts = 마지막 수정 시각(ms). 기기 간 최신 판단과 '내가 방금 쓴 변경' 식별에 사용
 const save=()=>{S._ts=Date.now();saveLocal();cloudSchedule()};
-let tab='rec',form={amount:'',cat:'mart',date:today(),sp:false,ov:false,pt:'m',op:''};
+const hashTab=typeof location!=='undefined'?location.hash.slice(1):'';
+let tab=['rec','cards','log','data','benefits'].includes(hashTab)?hashTab:'rec',form={amount:'',cat:'mart',date:today(),sp:false,ov:false,pt:'m',op:''};
 
 const won=n=>Math.round(n).toLocaleString('ko-KR')+'원';
 // 신한 EV: 전월 실적에서 '전월 교통카드 이용액(tr1)'은 빼고 '전전월 교통카드 이용액(tr2)'을 더한다.
@@ -507,8 +529,85 @@ async function nlRun(){
   finally{nlBusy=false}
 }
 
+// ───────────── 전체 카드 혜택 (안내장 요약 + PDF 저장) ─────────────
+// 한도·구간 금액은 계산 엔진(POOLS)과 같은 값에서 만들어 앱 계산과 어긋나지 않게 한다
+const man=n=>{const m=Math.floor(n/1e4),c=Math.round((n%1e4)/1e3);return(m?m+'만':'')+(c?c+'천':'')+'원'};
+const LIM=(cid,pid,p)=>man(POOLS[cid][pid].lim(p));
+const chargerNames=col=>CHARGERS.filter(c=>c[col]).map(c=>c[0].replace(/\s*\(.*\)$/,'')+(c[col]===2?'(△)':'')).join(', ');
+const TAG={shinhan:['신한','sh'],hana:['하나','hn'],samsung:['삼성','ss']};
+const tag=cid=>`<span class="tag ${TAG[cid][1]}">${TAG[cid][0]}</span>`;
+// 항목별 한눈에 보기: [항목, [[카드, 내용], ...]]  (해당 카드가 없으면 그 카드는 혜택 없음)
+function benefitRows(){return[
+ ['🛒 대형마트 (이마트·롯데마트·홈플러스)',[['shinhan','주말(토·일) 10% · 일 1회 · 1회 5만원까지 (창고형·온라인몰 제외)']]],
+ ['🏪 편의점 · 💊 병원/약국',[['shinhan','각 10% · 일 1회 · 월 5회 · 1회 1만원까지 (동물병원 제외)']]],
+ ['☕ 커피전문점',[['shinhan','10% · 스타벅스·커피빈·카페베네·엔젤리너스 · 일 1회 · 월 5회 · 1회 1만원까지']]],
+ ['🚇 대중교통 · 🚕 택시',[['shinhan','각 10% (후불교통카드 · 택시는 T-money·캐시비 단말기 승인건)']]],
+ ['⚡ 전기차 충전',[['shinhan',`30%(전월 30만↑) / 50%(60만↑) · 월 ${LIM('shinhan','charge',3e5)}`],['samsung',`50%(30만↑) / 70%(60만↑) · 월 ${LIM('samsung','charge',3e5)} / ${LIM('samsung','charge',6e5)}`]]],
+ ['🛣 하이패스',[['shinhan',`10% 캐시백 · 월 ${LIM('shinhan','hipass',3e5)} (30만↑)`],['samsung',`10% · 주차·대리운전과 통합 월 ${LIM('samsung','park',3e5)}`]]],
+ ['🅿 주차장 · 🚗 대리운전',[['samsung',`10% · 케이엠파크 / 카카오T 대리 · 통합 월 ${LIM('samsung','park',3e5)}`]]],
+ ['🛵 배달앱',[['samsung',`10% · 배달의민족·쿠팡이츠 · 월 ${LIM('samsung','deliv',3e5)}(30만↑) / ${LIM('samsung','deliv',6e5)}(60만↑)`]]],
+ ['🎬 영상 스트리밍 (정기결제)',[['hana','50% · 유튜브 프리미엄·디즈니플러스·Wavve·넷플릭스·티빙'],['samsung',`20% · 넷플릭스·웨이브·티빙·왓챠·멜론·FLO · 월 ${LIM('samsung','stream',3e5)}`]]],
+ ['🎟 디지털 멤버십',[['hana','50% · 네이버플러스멤버십·컬리멤버스·쿠팡와우멤버십 (월 정기결제)']]],
+ ['📱 간편결제',[['hana','10% · 네이버페이·카카오페이·토스페이·SSG페이·11pay·스마일페이 · 건당 1만원 이상 결제 시']]],
+ ['🛡 현대해상 다이렉트 자동차보험',[['shinhan','30만원 이상 결제 시 3만원 할인'],['samsung','30만원 이상 결제 시 3만원 할인 · 연 1회']]],
+ ['🌏 해외 결제',[['samsung','1% · 전월 실적·한도 없음 (해외겸용 카드)']]],
+];}
+function benefitCards(){
+  const t1=(cid,pid)=>[3e5,5e5,1e6].map(p=>LIM(cid,pid,p));
+  const h=POOLS.hana.main;
+  return[
+  {cid:'shinhan',title:'신한카드 EV (신용)',fee:'연회비: UPI 1만 2천원 / Master 1만 5천원',
+   tier:'전월 실적 구간: 30만원↑ / 50만원↑ / 60만원↑ / 100만원↑ (교통카드 이용액은 전전월 기준, 해외는 매입일 기준)',
+   items:[
+    `<b>전기차 충전</b> 30%(30~60만) · 50%(60만↑), 월 ${LIM('shinhan','charge',3e5)} 한도 — 대상 충전 사업자: ${chargerNames(1)}`,
+    `<b>생활 통합 10%</b> (편의점·병원/약국·3대마트 주말·대중교통·택시·커피) — 통합 월 한도 30만↑ ${LIM('shinhan','life',3e5)} / 50만↑ ${LIM('shinhan','life',5e5)} / 100만↑ ${LIM('shinhan','life',1e6)}`,
+    `<b>하이패스</b> 10% 캐시백, 월 ${LIM('shinhan','hipass',3e5)} (전월 30만↑, 도로공사 전기차 요금 할인이 적용된 신한하이패스 거래)`,
+    '<b>자동차보험</b> 현대해상 다이렉트 30만원 이상 결제 시 3만원 할인'],
+   notes:['현금서비스·카드론·연회비·수수료·이자·포인트 사용액·기프트/선불카드 충전·취소 금액은 전월 이용금액에서 제외','편의점·병원/약국은 신한카드 가맹점 업종 기준','신규 발급: 카드사용 등록월의 다음 달 말일까지 최저 구간 한도 적용','간편결제로 결제하면 신한 할인 대상에서 제외되는 것으로 보고 계산 (실물카드·직접결제 권장)','충전사업자 시트에는 신규 발급 중단으로 표기']},
+  {cid:'hana',title:'MG+ S 하나카드',fee:'연회비: 17,000원 (결제계좌는 새마을금고 계좌만 가능)',
+   tier:'지난달 1일~말일 국내외 일시불·할부 실적: 30만↑ / 60만↑ / 100만↑',
+   items:[
+    `<b>월 할인 한도(통합)</b> 30~60만 ${man(h.lim(3e5))} · 60~100만 ${man(h.lim(6e5))} · 100만↑ ${man(h.lim(1e6))}`,
+    '<b>간편결제 10%</b> — 네이버페이·카카오페이·토스페이·SSG페이·11pay·스마일페이, 건당 1만원 이상 결제 시',
+    '<b>영상 스트리밍 50%</b> — 유튜브(프리미엄)·디즈니플러스·Wavve·넷플릭스·티빙, 월 정기결제',
+    '<b>디지털 멤버십 50%</b> — 네이버플러스멤버십·컬리멤버스·쿠팡와우멤버십, 월 정기결제 (연 정기결제 등 다른 결제는 한도 내 1회만)'],
+   notes:['⚠ 간편결제 할인은 반드시 간편결제로 결제해야 적용됩니다 (실물카드·직접결제는 할인 없음)','할인 대상이 겹치면 할인 금액이 큰 서비스 1개만 적용 (매출 건당)','실적 제외: 국세·지방세·수도/전기요금 등 공과금, 도시가스, 아파트관리비, 4대보험, 학교납입금·등록금, 상품권·기프트카드·선불충전, 부동산임대료','할인 제외: 위 항목 + 무이자·부분 무이자 할부 금액 전체','신규 발급: 최초 사용등록일부터 다음 달 말일까지 30~60만 구간 혜택 제공']},
+  {cid:'samsung',title:'삼성 iD EV 카드',fee:'연회비: 해외겸용 Mastercard 1만 5천원 (기본 7천 + 제휴 8천)',
+   tier:'전월 이용금액 구간: 30만원↑ / 60만원↑ (해외 1%는 실적 무관)',
+   items:[
+    `<b>전기차 충전</b> 50%(30만↑, 월 ${LIM('samsung','charge',3e5)}) · 70%(60만↑, 월 ${LIM('samsung','charge',6e5)}) — 대상 충전 사업자: ${chargerNames(2)}`,
+    `<b>주차장·하이패스·대리운전 10%</b> — 케이엠파크·고속도로 통행료·카카오T 대리, 통합 월 ${LIM('samsung','park',3e5)} (30만↑)`,
+    `<b>배달앱 10%</b> — 배달의민족·쿠팡이츠, 월 ${LIM('samsung','deliv',3e5)}(30만↑) / ${LIM('samsung','deliv',6e5)}(60만↑)`,
+    `<b>스트리밍 20%</b> — 넷플릭스·웨이브·티빙·왓챠·멜론·FLO 정기결제, 월 ${LIM('samsung','stream',3e5)} (30만↑, 앱스토어 인앱결제 제외)`,
+    '<b>자동차보험</b> 현대해상 다이렉트 30만원 이상 결제 시 3만원 할인 (연 1회)',
+    '<b>해외 1%</b> — 전월 실적·한도 없음 (해외겸용 카드)'],
+   notes:['다른 결제일할인과 중복 적용되지 않으며 할인 금액이 큰 것만 적용','전월 실적 제외: 공과금·4대보험·국세·지방세, 학교납입금·등록금, 대중교통·택시·하이패스 통행료, 아파트 관리비, 부동산 임대료, 기프트·선불카드, 상품권','할인 제외: 무이자할부, 삼성카드 할인이 적용된 금액, 기프트·선불카드, 상품권','자체 가맹점번호로 승인되는 일부 결제건(간편결제·키오스크 등)은 할인 제외','충전 할인은 대상 충전소 멤버십 가입 후 카드를 결제카드로 등록하거나, 충전기기 이용 후 카드로 결제한 경우 (아파트 관리비에 포함된 충전요금 제외)','충전사업자 시트에는 신규 발급 중단으로 표기']}];
+}
+function vBenefits(){
+  const rows=benefitRows().map(([name,list])=>`<div class="brow"><div class="bh">${name}</div>${list.map(([cid,txt])=>`<div class="bl">${tag(cid)}<span>${txt}</span></div>`).join('')}</div>`).join('');
+  const cards=benefitCards().map(c=>`<div class="card bc"><h2>${tag(c.cid)} ${c.title}</h2>
+    <div class="mut">${c.fee}</div><div class="mut" style="margin-top:2px">${c.tier}</div>
+    <ul class="bul">${c.items.map(i=>`<li>${i}</li>`).join('')}</ul>
+    <div class="bn"><b>유의사항</b><ul>${c.notes.map(n=>`<li>${n}</li>`).join('')}</ul></div></div>`).join('');
+  return`<h1>전체카드혜택</h1>
+  <div class="no-print"><button onclick="printBenefits()">📄 PDF로 저장</button>
+    <div class="mut" style="margin-top:6px">인쇄 창에서 <b>대상(프린터)을 “PDF로 저장”</b>으로 선택하면 파일이 저장됩니다.</div></div>
+  <div class="printhead">카드픽 · 전체카드혜택 — ${today()} 출력</div>
+  <div class="card big" style="margin-top:12px"><h2>항목별 한눈에 보기</h2>${rows}
+    <div class="brow"><div class="bh">🚫 코스트코</div><div class="bl"><span>현대카드만 결제할 수 있어 위 세 카드로는 결제할 수 없습니다.</span></div></div></div>
+  ${cards}
+  <div class="mut" style="margin:4px 2px 12px">※ 카드사 상품 안내장을 바탕으로 정리한 요약이며, 카드사 정책에 따라 바뀔 수 있습니다. 자세한 조건은 카드사 홈페이지·고객센터에서 확인하세요.</div>`;
+}
+function printBenefits(){
+  const old=document.title;document.title=`카드픽_전체카드혜택_${today()}`;   // 저장되는 PDF 파일 이름
+  const back=()=>{document.title=old;window.removeEventListener('afterprint',back)};
+  window.addEventListener('afterprint',back);
+  try{window.print()}catch(e){back();alert('이 브라우저에서는 인쇄(PDF 저장)를 열 수 없습니다.')}
+  setTimeout(back,60000);
+}
+
 // ───────────── 화면 ─────────────
-const TABS=[['rec','💡 결제카드분석'],['cards','💳 내 카드'],['log','🧾 기록'],['data','⚙️ 데이터 · 계정']];
+const TABS=[['rec','💡 결제카드분석'],['cards','💳 내 카드'],['log','🧾 기록'],['data','⚙️ 데이터 · 계정'],['benefits','🎁 전체카드혜택']];
 let menuOpen=false;
 function setMenu(v){menuOpen=v;const m=document.getElementById('menu'),sc=document.getElementById('scrim'),b=document.getElementById('mbtn');
   m.hidden=!v;sc.hidden=!v;if(b.setAttribute)b.setAttribute('aria-expanded',String(v));if(b.classList)b.classList.toggle('open',v)}
@@ -519,7 +618,7 @@ function render(){
   document.getElementById('menu').innerHTML=TABS.map(([k,l])=>`<button role="menuitem" class="${tab===k?'on':''}${k==='data'?' sep':''}" onclick="go('${k}')">${l}</button>`).join('');
   document.getElementById('pg').textContent=(TABS.find(t=>t[0]===tab)||['',''])[1].replace(/^\S+\s/,'');
   const el=document.getElementById('app');
-  const fn={rec:vRec,cards:vCards,log:vLog,data:vData}[tab];
+  const fn={rec:vRec,cards:vCards,log:vLog,data:vData,benefits:vBenefits}[tab];
   const keep=document.activeElement&&document.activeElement.id;
   el.innerHTML=rolloverBanner()+fn();
   if(keep){const n=document.getElementById(keep);if(n){n.focus();try{n.setSelectionRange(n.value.length,n.value.length)}catch(e){}}}
@@ -579,7 +678,7 @@ function record(cid){
   save();form.amount='';tab='rec';render();
   toast(`${CARDS.find(c=>c.id===cid).name} 기록됨 (할인 ${won(e.disc)})`);
 }
-function toast(t){const d=document.createElement('div');d.textContent=t;
+function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;
   d.style.cssText='position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#111;color:#fff;padding:9px 14px;border-radius:20px;font-size:13px;z-index:9';
   document.body.appendChild(d);setTimeout(()=>d.remove(),1800)}
 

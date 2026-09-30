@@ -4,7 +4,7 @@ const fs=require('fs'),path=require('path');
 const b=boot();const els=b.dev.els;
 b.X.render();
 const items=[...els.menu.innerHTML.matchAll(/<button[^>]*onclick="go\('(\w+)'\)"[^>]*>([^<]*)</g)].map(m=>m[1]);
-ok('메뉴 항목 4개, 순서: 추천 → 내 카드 → 기록 → (맨 아래) 데이터·계정',JSON.stringify(items)==='["rec","cards","log","data"]',items.join(','));
+ok('메뉴 항목 5개, 순서: 결제카드분석 → 내 카드 → 기록 → 데이터·계정 → (맨 아래) 전체카드혜택',JSON.stringify(items)==='["rec","cards","log","data","benefits"]',items.join(','));
 ok('데이터·계정 항목은 구분선(sep)으로 분리',/class="[^"]*sep[^"]*"[^>]*onclick="go\('data'\)"/.test(els.menu.innerHTML));
 ok('현재 화면 항목 강조(on), 헤더에 현재 화면 이름',/class="on"[^>]*onclick="go\('rec'\)"/.test(els.menu.innerHTML)&&els.pg.textContent==='결제카드분석',els.pg.textContent);
 ok('처음엔 메뉴 닫힘',els.menu.hidden===true||els.menu.hidden===undefined);
