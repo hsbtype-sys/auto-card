@@ -15,7 +15,7 @@ function boot({store={},firebase,config='placeholder',confirmAns=true,promptVal,
   vm.createContext(ctx);
   const cfg=config==='real'?REAL_CFG:'const FIREBASE_CONFIG={apiKey:"PLACEHOLDER"};';
   const src=config==='real'||config==='placeholder'?SRC.replace(/const FIREBASE_CONFIG = \{[\s\S]*?\};/,cfg):SRC;
-  vm.runInContext(src+`;globalThis.X={get S(){return S},set S(v){S=v},form:f=>Object.assign(form,f),getForm:()=>form,record,delLog,exp,imp,save,blank,calc,mkTx,rank,eff,rollover,rolloverBanner,vRec,vCards,vData,vBenefits,vLog,render,setTab:t=>{tab=t},POOLS,RULES,CARDS,CATS,CHARGERS,curMonth,usedAmt,cnt,exThis,trThis,resetMonth,clearLog,resetAll,cloudLogin,cloudLogout,cloudSyncNow,cloudUI,cloudReady,pushNow,get syncMsg(){return syncMsg},get timer(){return syncTimer},get user(){return fbUser},gkGet,gkSave,gkDelete,gkSaveUI,getGeminiKey,parseNaturalLanguage,validateNL,nlRun,setNl:t=>{nlText=t},GEMINI_MODELS,setRetryMs:v=>{GEMINI_RETRY_MS=v},docRef:()=>docRef()}`,ctx);
+  vm.runInContext(src+`;globalThis.X={get S(){return S},set S(v){S=v},form:f=>Object.assign(form,f),getForm:()=>form,record,delLog,exp,imp,save,blank,calc,mkTx,rank,eff,rollover,rolloverBanner,vRec,vCards,vData,vBenefits,vLog,render,explainHTML,showExplain,closePop,calcBest,setTab:t=>{tab=t},POOLS,RULES,CARDS,CATS,CHARGERS,curMonth,usedAmt,cnt,exThis,trThis,resetMonth,clearLog,resetAll,cloudLogin,cloudLogout,cloudSyncNow,cloudUI,cloudReady,pushNow,get syncMsg(){return syncMsg},get timer(){return syncTimer},get user(){return fbUser},gkGet,gkSave,gkDelete,gkSaveUI,getGeminiKey,parseNaturalLanguage,validateNL,nlRun,setNl:t=>{nlText=t},GEMINI_MODELS,setRetryMs:v=>{GEMINI_RETRY_MS=v},docRef:()=>docRef()}`,ctx);
   return{X:ctx.X,ctx,dev,store};
 }
 let pass=0,fail=0;
