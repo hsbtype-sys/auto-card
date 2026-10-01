@@ -26,4 +26,11 @@ const man=JSON.parse(fs.readFileSync(path.join(__dirname,'..','manifest.json'),'
 ok('manifest 이름이 앱 이름과 일치',/카드픽/.test(man.name)&&man.short_name==='카드픽');
 ok('<title>/iOS 앱 이름 일치',/<title>카드픽<\/title>/.test(HTML)&&/apple-mobile-web-app-title" content="카드픽"/.test(HTML));
 ok('내용이 하단 탭바 여백(90px)을 더 이상 안 씀',!/padding:16px 16px 90px/.test(HTML));
+// 상단 '카드픽' 제목을 누르면 결제카드분석 화면으로
+ok('헤더 제목이 버튼이고 go(\'rec\') 호출',/<button class="home" onclick="go\('rec'\)"[^>]*>💳 카드픽<\/button>/.test(HTML));
+{const x=boot();const e=x.dev.els;const run=c=>require('vm').runInContext(c,x.ctx);
+ run("go('benefits')");const fromBenefits=/전체카드혜택/.test(e.app.innerHTML);
+ run("go('rec')");ok('다른 화면(전체카드혜택)에서 제목 클릭 → 결제카드분석',fromBenefits&&/어떤 카드로 결제할까/.test(e.app.innerHTML)&&e.pg.textContent==='결제카드분석');
+ run("go('data');toggleMenu()");const open1=e.menu.hidden===false;run("go('rec')");
+ ok('메뉴가 열려 있어도 제목 클릭 → 이동하며 메뉴 닫힘',open1&&e.menu.hidden===true&&e.scrim.hidden===true)}
 process.exit(done('nav')?1:0);

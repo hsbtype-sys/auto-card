@@ -35,7 +35,9 @@ button.ghost{background:transparent;color:var(--pri);border:1px solid var(--line
 button.sm{padding:5px 9px;font-size:12px}
 .top{position:sticky;top:0;z-index:20;background:var(--card);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top)}
 .top .in{max-width:560px;margin:0 auto;height:52px;padding:0 6px 0 16px;display:flex;align-items:center;justify-content:space-between}
-.ttl{font-size:18px;font-weight:800;letter-spacing:-.3px}.ttl small{font-size:12px;font-weight:600;color:var(--mut);margin-left:8px;letter-spacing:0}
+.ttl{font-size:18px;font-weight:800;letter-spacing:-.3px}.home{background:transparent;color:inherit;padding:6px 6px;margin:-6px -6px;font:inherit;font-weight:800;letter-spacing:-.3px;border-radius:10px;-webkit-tap-highlight-color:transparent}
+.home:active{background:var(--soft)}
+.ttl small{font-size:12px;font-weight:600;color:var(--mut);margin-left:8px;letter-spacing:0}
 .hb{width:44px;height:44px;padding:0;background:transparent;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:var(--tx)}
 .hb i{display:block;width:20px;height:2px;border-radius:2px;background:currentColor;transition:transform .2s,opacity .2s}
 .hb.open i:nth-child(1){transform:translateY(7px) rotate(45deg)}.hb.open i:nth-child(2){opacity:0}.hb.open i:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
@@ -98,7 +100,7 @@ details summary{cursor:pointer;color:var(--pri);font-size:13px;margin-top:10px}
 </head>
 <body>
 <header class="top"><div class="in">
-  <div class="ttl">💳 카드픽<small id="pg"></small></div>
+  <div class="ttl"><button class="home" onclick="go('rec')" aria-label="카드픽 — 결제카드분석 화면으로 이동">💳 카드픽</button><small id="pg"></small></div>
   <button class="hb" id="mbtn" onclick="toggleMenu()" aria-label="메뉴" aria-haspopup="true" aria-expanded="false"><i></i><i></i><i></i></button>
 </div><div class="menu" id="menu" role="menu" hidden></div></header>
 <div class="scrim" id="scrim" onclick="closeMenu()" hidden></div>
