@@ -452,7 +452,10 @@ function cloudUI(){
 // ───────────── Gemini API 키 + 자연어 입력 ─────────────
 // 키는 상태 S(백업·로그)에 넣지 않고 별도 저장. 원본: Firestore users/{uid}.geminiKey, 캐시: localStorage. 키 값은 화면·로그·메시지에 절대 출력하지 않는다
 const GEMINI_LS='autocard.gemini';
-const GEMINI_MODELS=['gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite'];   // 위에서부터 시도. 무료 한도: Flash 계열 분당5·일20 / Flash Lite 분당15·일500
+// 위에서부터 시도: 가볍고 한도 넉넉한 Lite 먼저(분당15·일500), 실패·품질 부족 시 Flash(분당5·일20)로 승격
+const GEMINI_MODELS=['gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash'];
+const isLiteModel=m=>/lite/.test(m);
+const hasAmountHint=t=>/\d|[백천만억]|원/.test(t);   // 문장에 금액 표현이 있는지 (없으면 금액 누락이 정상이라 승격하지 않음)
 const modelSkip={};   // 최근 실패한 모델을 잠시 건너뛰기 위한 메모리 기록   // 앞에서부터 시도
 const gkGet=()=>{try{return localStorage.getItem(GEMINI_LS)||''}catch(e){return ''}};
 const gkSetLocal=v=>{try{v?localStorage.setItem(GEMINI_LS,v):localStorage.removeItem(GEMINI_LS)}catch(e){}};
@@ -496,8 +499,9 @@ category id: ${CATS.map(([k,l])=>k+'='+l.replace(/^\S+\s/,'')).join(' / ')}
   // 모델마다 무료 한도(분당·일일)가 따로라서, 503·429가 나면 같은 모델을 다시 두드리지 않고(한도만 소모) 바로 다음 모델로 넘어간다.
   // 실패한 모델은 잠시 건너뛴다(429: 60초, 5xx: 20초). 전부 건너뛰는 상태면 목록 전체를 다시 시도
   const tStart=Date.now();let order=GEMINI_MODELS.filter(m=>!(modelSkip[m]>tStart));if(!order.length)order=GEMINI_MODELS.slice();
-  let lastErr='',busy=false,quota=false;
+  let lastErr='',busy=false,quota=false,skipLite=false,partial=null;
   outer: for(const m of order){
+    if(skipLite&&isLiteModel(m))continue;           // 승격이 정해지면 남은 Lite는 건너뛰고 Flash로
     if(Date.now()-tStart>30000)break;
     if(onStatus&&m!==order[0])onStatus('Gemini가 혼잡해 다른 모델로 시도하는 중…');
     for(let attempt=0;attempt<2;attempt++){         // 네트워크 오류만 같은 모델로 1회 재시도
@@ -512,10 +516,14 @@ category id: ${CATS.map(([k,l])=>k+'='+l.replace(/^\S+\s/,'')).join(' / ')}
       if(res.status===429){quota=true;modelSkip[m]=Date.now()+60000;break}
       if(res.status>=500){busy=true;modelSkip[m]=Date.now()+20000;break}
       if(!res.ok){lastErr='Gemini 응답 오류 ('+res.status+')';break}
-      let raw;try{const j=await res.json();raw=j.candidates[0].content.parts[0].text}catch(e){throw new Error('Gemini 응답을 해석하지 못했습니다.')}
-      return validateNL(raw);
+      let parsed;try{const j=await res.json();parsed=validateNL(j.candidates[0].content.parts[0].text)}
+      catch(e){lastErr='Gemini 응답을 해석하지 못했습니다.';if(isLiteModel(m))skipLite=true;break}   // 깨진 응답 → 다음(상위) 모델로
+      // 승격: Lite가 금액을 못 뽑았는데 문장엔 금액 표현이 있으면 Flash로 다시 분석
+      if(isLiteModel(m)&&parsed.amount===''&&hasAmountHint(text)){partial=partial||parsed;skipLite=true;break}
+      return parsed;
     }
   }
+  if(partial)return partial;                          // Flash까지 실패하면 Lite 결과(금액만 비어 있음)라도 돌려준다
   if(busy)throw new Error('Gemini 서버가 지금 혼잡합니다. 잠시 후 다시 눌러 주세요.');
   if(quota)throw new Error('Gemini 사용 한도를 초과했습니다. 잠시 후 다시 시도하세요.');
   throw new Error(lastErr||'분석하지 못했습니다.');

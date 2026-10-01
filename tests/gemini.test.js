@@ -64,17 +64,42 @@ const today=()=>new Date().toLocaleDateString('sv');
   for(const [st,re] of [[400,/키가 올바르지/],[401,/키가 올바르지/],[403,/키가 올바르지/],[429,/한도/],[500,/혼잡/],[503,/혼잡/],[418,/응답 오류/]]){
     const x=app(()=>jres(st,{error:{message:'API key not valid '+KEY}}));await x.X.gkSave(KEY);let m='';try{await x.X.parseNaturalLanguage('x')}catch(er){m=er.message}
     ok(`HTTP ${st} → 안내 메시지, 키 미포함`,re.test(m)&&!m.includes(KEY),m)}
-  // ── 503·429: 같은 모델 재시도 없이 다음 모델로 (모델별 무료 한도가 따로라 재시도는 한도만 소모) ──
+  // ── 순서: 3.5 Lite → 3.1 Lite → 3.8 → 3.7 → 3.6 → 3.5 Flash. 실패하면 같은 모델 재시도 없이 다음 모델로 ──
   const mname=c=>c.url.split('/models/')[1].split(':')[0];
+  const ORDER=['gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash'];
   { const x=app(()=>jres(503,{}));await x.X.gkSave(KEY);try{await x.X.parseNaturalLanguage('x')}catch(e){}
-    ok('시도 순서: 3.8 → 3.7 → 3.6 → 3.5 → 3.5 Lite → 3.1 Lite',JSON.stringify(x.calls.map(mname))==='["gemini-3.8-flash","gemini-3.7-flash","gemini-3.6-flash","gemini-3.5-flash","gemini-3.5-flash-lite","gemini-3.1-flash-lite"]',x.calls.map(mname).join('>'));
+    ok('시도 순서: 3.5 Lite → 3.1 Lite → 3.8 → 3.7 → 3.6 → 3.5 Flash',JSON.stringify(x.calls.map(mname))===JSON.stringify(ORDER),x.calls.map(mname).join('>'));
     ok('같은 모델을 두 번 두드리지 않음(모델당 1회)',new Set(x.calls.map(mname)).size===x.calls.length)}
+  { const x=app(()=>gem({amount:1500,category:'cvs'}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('편의점 1500원');
+    ok('정상이면 첫 모델(3.5 Lite) 한 번으로 끝',q.amount===1500&&x.calls.length===1&&mname(x.calls[0])==='gemini-3.5-flash-lite')}
   { let n=0;const x=app(()=>++n===1?jres(503,{}):gem({amount:2000,category:'cvs'}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
-    ok('3.8이 503 → 바로 3.7로 성공',q.amount===2000&&x.calls.length===2&&mname(x.calls[1])==='gemini-3.7-flash')}
-  { let n=0;const x=app(()=>++n<=3?jres(503,{}):gem({amount:3000,category:'cvs'}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
-    ok('3.8·3.7·3.6이 503 → 3.5에서 성공',q.amount===3000&&mname(x.calls[3])==='gemini-3.5-flash',x.calls.map(mname).join('>'))}
-  { let n=0;const x=app(()=>++n<=4?jres(429,{}):gem({amount:6000,category:'cvs'}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
-    ok('Flash 4개가 모두 한도(429) → 5번째 3.5 Lite가 받아줌',q.amount===6000&&mname(x.calls[4])==='gemini-3.5-flash-lite')}
+    ok('3.5 Lite가 503 → 3.1 Lite로 성공(같은 Lite 계열의 다른 한도)',q.amount===2000&&x.calls.length===2&&mname(x.calls[1])==='gemini-3.1-flash-lite')}
+  { let n=0;const x=app(()=>++n<=2?jres(429,{}):gem({amount:3000,category:'cvs'}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
+    ok('Lite 두 개가 모두 한도(429) → Flash 첫 모델(3.8)이 받아줌',q.amount===3000&&mname(x.calls[2])==='gemini-3.8-flash',x.calls.map(mname).join('>'))}
+  { let n=0;const x=app(()=>++n<=5?jres(503,{}):gem({amount:6000,category:'cvs'}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
+    ok('마지막 3.5 Flash까지 내려가서 성공',q.amount===6000&&mname(x.calls[5])==='gemini-3.5-flash')}
+  // ── 승격: Lite가 금액을 못 뽑으면(문장엔 금액 표현이 있는데) 남은 Lite는 건너뛰고 Flash로 ──
+  { let n=0;const x=app((u)=>isLite(u)?gem({amount:null,category:'mart'}):gem({amount:60000,category:'mart'}));function isLite(u){return /lite/.test(u)}
+    await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('토요일 이마트 6만원');
+    ok('승격: Lite가 금액 누락 → 3.1 Lite를 건너뛰고 바로 3.8 Flash로 성공',q.amount===60000&&x.calls.length===2&&mname(x.calls[0])==='gemini-3.5-flash-lite'&&mname(x.calls[1])==='gemini-3.8-flash',x.calls.map(mname).join('>'))}
+  { const x=app((u)=>/lite/.test(u)?gem({amount:'',category:'mart'}):gem({amount:30000,category:'mart'}));await x.X.gkSave(KEY);
+    for(const t of['이마트 3만원','이마트 30000','이마트 삼만원','이마트 3만'])x.calls.length=0,await x.X.parseNaturalLanguage(t),ok('승격 조건: 금액 표현이 있는 문장 → Flash로 ('+t+')',x.calls.length===2&&/3\.8-flash/.test(x.calls[1].url))}
+  { const x=app(()=>gem({amount:null,category:'mart',date:'2026-10-03'}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('토요일 이마트 갔어');
+    ok('금액 표현이 전혀 없는 문장은 승격하지 않음 (Flash 한도 절약, Lite 1회로 종료)',x.calls.length===1&&q.amount===''&&q.cat==='mart'&&q.date==='2026-10-03')}
+  { const x=app((u)=>/lite/.test(u)?gem({amount:null,category:'cvs'}):jres(503,{}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('편의점 5천원');
+    ok('승격했는데 Flash가 전부 503 → Lite 결과(금액만 비어 있음)라도 반환, 오류로 끝내지 않음',q.cat==='cvs'&&q.amount===''&&x.calls.length===5,x.calls.map(mname).join('>'))}
+  { const x=app((u)=>/lite/.test(u)?gem({amount:null,category:'cvs'}):gem({amount:5000,category:'cvs'}));await x.X.gkSave(KEY);
+    await x.X.parseNaturalLanguage('편의점 5천원');await x.X.parseNaturalLanguage('편의점 5천원');
+    ok('승격은 요청마다 독립 (두 번째도 Lite부터 시작)',mname(x.calls[2])==='gemini-3.5-flash-lite')}
+  { const x=app((u)=>/lite/.test(u)?gem('깨진 응답'):gem({amount:7000,category:'cvs'}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
+    ok('Lite가 JSON이 아닌 응답 → Flash로 승격해서 성공',q.amount===7000&&x.calls.length===2&&/3\.8-flash/.test(x.calls[1].url))}
+  { const x=app(()=>gem('깨진 응답'));await x.X.gkSave(KEY);let m='';try{await x.X.parseNaturalLanguage('x')}catch(er){m=er.message}
+    ok('모든 모델이 깨진 응답 → 해석 실패 오류(앱은 안 죽음)',/해석/.test(m)&&!m.includes(KEY),m)}
+  { const x=app((u)=>u.includes('3.8-flash:')?gem({amount:4000,category:'cvs'}):/lite/.test(u)?gem({amount:null,category:'cvs'}):jres(503,{}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('편의점 4천원');
+    ok('승격 후 3.8이 받으면 3.7 이하는 안 부름',q.amount===4000&&x.calls.length===2)}
+  { const x=app((u)=>u.includes('3.5-flash-lite:')?jres(429,{}):gem({amount:4500,category:'cvs'}));await x.X.gkSave(KEY);
+    await x.X.parseNaturalLanguage('a');const c1=x.calls.length;await x.X.parseNaturalLanguage('b');
+    ok('한도(429) 난 3.5 Lite는 다음 요청에서 건너뜀 (첫 요청 2회 → 두 번째는 3.1 Lite로 바로 1회)',c1===2&&x.calls.length===3&&mname(x.calls[2])==='gemini-3.1-flash-lite',x.calls.map(mname).join('>'))}
   { const x=app(()=>jres(503,{error:{message:'overloaded '+KEY}}));await x.X.gkSave(KEY);let m='';const st=[];try{await x.X.parseNaturalLanguage('x',s=>st.push(s))}catch(er){m=er.message}
     ok('모든 모델 503 → 혼잡 안내(키 미포함), 총 6회 시도',/혼잡/.test(m)&&!m.includes(KEY)&&x.calls.length===6,x.calls.length+' '+m);
     ok('넘어가는 중 상태 문구 콜백 호출',st.some(t=>/다른 모델/.test(t)))}
@@ -85,13 +110,10 @@ const today=()=>new Date().toLocaleDateString('sv');
   { let n=0;const x=app(async()=>{if(++n===1)throw new Error('net');return gem({amount:5000,category:'cvs'})});await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
     ok('일시적 네트워크 오류는 같은 모델로 1회 재시도',q.amount===5000&&n===2&&mname(x.calls[0])===mname(x.calls[1]))}
   // 쿨다운: 방금 실패한 모델은 잠시 건너뛰어 불필요한 요청(한도 소모)을 피한다
-  { const x=app((u)=>u.includes('gemini-3.8-flash:')?jres(429,{}):gem({amount:7000,category:'cvs'}));await x.X.gkSave(KEY);
-    await x.X.parseNaturalLanguage('a');const c1=x.calls.length;await x.X.parseNaturalLanguage('b');
-    ok('한도(429) 난 3.8은 다음 요청에서 건너뜀 (첫 요청 2회 → 두 번째 요청은 3.7로 바로 1회)',c1===2&&x.calls.length===3&&mname(x.calls[2])==='gemini-3.7-flash',x.calls.map(mname).join('>'))}
   { const x=app(()=>jres(503,{}));await x.X.gkSave(KEY);try{await x.X.parseNaturalLanguage('a')}catch(e){}const c1=x.calls.length;try{await x.X.parseNaturalLanguage('b')}catch(e){}
     ok('전부 실패 직후에도 다시 누르면 목록 전체를 재시도(막히지 않음)',c1===6&&x.calls.length===12)}
-  { let n=0;const x=app((u)=>{n++;return u.includes('gemini-3.8-flash')?jres(404,{}):gem({amount:1000,category:'cvs'})});await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
-    ok('첫 모델 404 → 다음 모델로 자동 대체',q.amount===1000&&n===2&&x.calls[1].url.includes('gemini-3.7-flash:'))}
+  { let n=0;const x=app((u)=>{n++;return u.includes('gemini-3.5-flash-lite')?jres(404,{}):gem({amount:1000,category:'cvs'})});await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('x');
+    ok('첫 모델 404 → 다음 모델로 자동 대체',q.amount===1000&&n===2&&x.calls[1].url.includes('gemini-3.1-flash-lite:'))}
   { const x=app(()=>jres(404,{}));await x.X.gkSave(KEY);let m='';try{await x.X.parseNaturalLanguage('x')}catch(er){m=er.message}ok('모든 모델 404 → 에러',/모델을 찾지 못/.test(m)&&x.calls.length===6)}
   { const x=app(()=>gem({}));let m='';try{await x.X.parseNaturalLanguage('x')}catch(er){m=er.message}ok('키 없음 → 에러(호출 안 함)',/키가 없습니다/.test(m)&&x.calls.length===0)}
   { const x=app(()=>gem({}));await x.X.gkSave(KEY);let m='';try{await x.X.parseNaturalLanguage('   ')}catch(er){m=er.message}ok('빈 입력 → 에러(호출 안 함)',/입력하세요/.test(m)&&x.calls.length===0)}
