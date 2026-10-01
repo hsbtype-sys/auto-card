@@ -42,6 +42,16 @@ ok('인쇄 스타일: 헤더/메뉴 숨김, 밝은 색상 강제, A4',/@media pr
  cb&&cb();ok('인쇄 후 제목 복원',x.ctx.document.title==='카드픽')}
 {const x=boot();x.ctx.window.addEventListener=()=>{};x.ctx.window.removeEventListener=()=>{};x.ctx.window.print=()=>{throw new Error('no')};x.ctx.document.title='카드픽';
  require('vm').runInContext('printBenefits()',x.ctx);ok('인쇄 미지원 브라우저: 앱은 안 죽고 안내',x.dev.alerts.length===1&&x.ctx.document.title==='카드픽')}
+// ── 농협 올바른 NEW HAVE (안내장 대조) ──
+ok('농협 두 카드 상세 + 연회비 없음',/농협 올바른 NEW HAVE 체크카드 연회비: 없음 \(Local \/ Mastercard\)/.test(txt)&&/농협 올바른 NEW HAVE 원이 체크카드 연회비: 없음 \(국내전용 \/ 해외겸용 UnionPay\)/.test(txt)&&/가족카드 발급 불가/.test(txt));
+ok('농협: 기본적립 0.2%, 스마트적립 1위 +0.4%(총 0.6%)·2위 +0.2%(총 0.4%)',/기본적립 0\.2%/.test(txt)&&/1위 영역 \+0\.4%\(총 0\.6%\)/.test(txt)&&/2위 영역 \+0\.2%\(총 0\.4%\)/.test(txt));
+ok('농협: 전월 20만원↑·추가분 월 5,000P·익월 15일 이후 적립',/전월 실적 20만원↑/.test(txt)&&/월 5,000P/.test(txt)&&/익월 15일 이후/.test(txt));
+ok('농협: 이체수수료 월 5회 면제(30만↑), 라운지 연 1회(50만↑, 등록월 제외)',/이체수수료 통합 월 5회 면제/.test(txt)&&/전월 30만원↑/.test(txt)&&/라운지 무료이용 연 1회/.test(txt)&&/전월 50만원↑/.test(txt)&&/등록월 제외/.test(txt));
+ok('농협: 6개 영역과 대상 가맹점(쿠팡·올리브영·넷플릭스·스타벅스 등)',['쿠팡','올리브영','다이소','이마트','넷플릭스','스타벅스','GS25','해외 온라인쇼핑'].every(k=>txt.includes(k)));
+ok('농협 원이: 올원뱅크 해외서비스수수료 $0.5 캐시백(20만↑, 월 5회, 건당 $1↑) — 뉴해브에는 없음',(()=>{const one=txt.split('농협 올바른 NEW HAVE 원이 체크카드')[1]||'',nw=(txt.split('농협 올바른 NEW HAVE 체크카드')[1]||'').split('농협 올바른 NEW HAVE 원이 체크카드')[0];return /해외서비스수수료 \$0\.5 캐시백/.test(one)&&!/올원뱅크/.test(nw)})());
+ok('농협: 순위 동률 번호순·입점 매장 제외·RF 후불교통·Local 해외불가 안내',/영역 번호\(①~⑥\) 순/.test(txt)&&/백화점·할인점\(아울렛\) 입점 매장/.test(txt)&&/후불교통\(RF\)/.test(txt)&&/국내전용\(Local\)카드는 해외 이용이 불가/.test(txt));
+ok('농협: 한도 숫자가 계산 엔진 상수와 일치(20만원/5천P)',h.includes('20만원')&&h.includes('5,000P'));
+ok('요약 표에 농협 항목(기본적립·스마트적립·부가서비스) + 두 카드 배지',/기본적립 \(모든 가맹점\)/.test(txt)&&/스마트적립 \(6개 영역/.test(txt)&&/농협 부가서비스/.test(txt)&&/\.tag\.n1\{background:#0b7fab\}/.test(HTML)&&/\.tag\.n2\{background:#b45309\}/.test(HTML));
 // 카드사 대표색: 신한 블루 / 하나 그린(보라 아님) / 삼성 블루
 ok('배지 색: 신한 #0046ff, 하나 #078a5d, 삼성 #1428a0',/\.tag\.sh\{background:#0046ff\}/.test(HTML)&&/\.tag\.hn\{background:#078a5d\}/.test(HTML)&&/\.tag\.ss\{background:#1428a0\}/.test(HTML));
 ok('하나 배지에 이전 보라색(#7c3aed) 없음',!/\.tag\.hn\{background:#7c3aed\}/.test(HTML));

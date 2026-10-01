@@ -169,5 +169,21 @@ const clearAuth=()=>fetch('http://127.0.0.1:9099/emulator/v1/projects/demo-auto-
   const {allLogs}=require('./harness');
   ok('콘솔 출력 어디에도 키 없음',!allLogs.join('\n').includes(KEY)&&!allLogs.join('\n').includes(KEY2));
 
+  // ═════════ 카드 선택 + 농협 영역 금액이 실제 Firestore에서 왕복 ═════════
+  await clearDb();await clearAuth();
+  const A2=device(),B2=device();
+  await A2.fb.auth().createUserWithEmailAndPassword('nh@example.com',PW);const nu=uidOf(A2);await waitFor(()=>A2.X.user&&/동기화됨/.test(A2.X.syncMsg));
+  A2.X.toggleCard('nhnew',true);A2.X.toggleCard('hana',false);A2.X.S.cards.nhnew.area[2]=123456;A2.X.S.cards.nhnew.prev=250000;A2.X.save();
+  A2.X.form({amount:100000,cat:'mart',date:'2026-10-07'});A2.X.record('nhnew');A2.X.form({amount:50000,cat:'mart',date:'2026-10-08',ov:true});A2.X.record('nhnew');
+  await sleep(1800);
+  d=await serverDoc(nu);const stf=d.fields.state.mapValue.fields;
+  ok('서버에 선택한 카드 목록 저장(배열)',(stf.enabled.arrayValue.values||[]).map(v=>v.stringValue).join()==='shinhan,samsung,nhnew');
+  ok('서버에 농협 영역별 직접입력 저장(숫자 문자열 키 "2")',!!stf.cards.mapValue.fields.nhnew.mapValue.fields.area.mapValue.fields['2']);
+  ok('서버 로그에 해외 플래그(ov) 저장',(stf.log.arrayValue.values||[]).some(v=>v.mapValue.fields.ov&&v.mapValue.fields.ov.booleanValue===true));
+  await B2.fb.auth().signInWithEmailAndPassword('nh@example.com',PW);
+  ok('다른 기기가 선택한 카드·영역 입력·실적을 그대로 수신',await waitFor(()=>B2.X.S.enabled.join()==='shinhan,samsung,nhnew'&&B2.X.S.cards.nhnew.area[2]===123456&&B2.X.S.cards.nhnew.prev===250000));
+  ok('다른 기기에서도 같은 비교 대상(3장)과 같은 영역 합계',B2.X.rank().map(x=>x.c.id).sort().join()==='nhnew,samsung,shinhan'&&B2.X.nhAreaTotals('nhnew','2026-10-07')[2]===223456&&B2.X.nhAreaTotals('nhnew','2026-10-07')[6]===50000);
+  B2.X.toggleCard('nhnew',false);
+  ok('한 기기에서 체크 해제 → 다른 기기에 실시간 반영',await waitFor(()=>A2.X.S.enabled.join()==='shinhan,samsung'));
   const f=done('emulator');process.exit(f?1:0);
 })().catch(e=>{console.log('CRASH',e);process.exit(2)});

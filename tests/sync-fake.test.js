@@ -39,6 +39,7 @@ function device(name,{config=true,noFirebase=false,initThrows=false,store={}}={}
   vm.createContext(ctx);
   const cfg=config?'const FIREBASE_CONFIG={apiKey:"KEY",authDomain:"a",projectId:"p",storageBucket:"b",messagingSenderId:"m",appId:"i"};':'const FIREBASE_CONFIG={apiKey:"PLACEHOLDER"};';
   vm.runInContext(cfg+src+`;globalThis.X={get S(){return S},set S(v){S=v},form:f=>Object.assign(form,f),record,delLog,exp,imp,cloudLogin,cloudLogout,cloudSyncNow,cloudUI,vLog,vCards,save,get syncMsg(){return syncMsg},get timer(){return syncTimer},cloudReady,blank,setTab:t=>{tab=t}}`,ctx);
+  vm.runInContext("S.setupDone=true;S.enabled=['shinhan','hana','samsung'];",ctx);
   dev.X=ctx.X;dev.ctx=ctx;dev.setOnline=async v=>{dev.online=v;if(v){const q=dev.queue.splice(0);q.forEach(f=>f());server.listeners.forEach(l=>l.emit())}};
   return dev;
 }

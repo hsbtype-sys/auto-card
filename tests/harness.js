@@ -4,7 +4,7 @@ const HTML=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const SRC=HTML.match(/<script>([\s\S]*)<\/script>/)[1];
 const REAL_CFG=SRC.match(/const FIREBASE_CONFIG = \{[\s\S]*?\};/)[0];
 const allLogs=[];
-function boot({store={},firebase,config='placeholder',confirmAns=true,promptVal,clip,fetch}={}){
+function boot({store={},firebase,config='placeholder',confirmAns=true,promptVal,clip,fetch,fresh=false}={}){
   const els={},dev={store,alerts:[],prompts:[],toasts:[],logs:[],online:true,els};
   const ctx={document:{getElementById:id=>els[id]=els[id]||{},activeElement:null,createElement:()=>({style:{},remove(){}}),body:{appendChild(n){dev.toasts.push(n.textContent)}}},
     localStorage:{getItem:k=>store[k]??null,setItem:(k,v)=>{store[k]=v},removeItem:k=>{delete store[k]}},
@@ -15,7 +15,8 @@ function boot({store={},firebase,config='placeholder',confirmAns=true,promptVal,
   vm.createContext(ctx);
   const cfg=config==='real'?REAL_CFG:'const FIREBASE_CONFIG={apiKey:"PLACEHOLDER"};';
   const src=config==='real'||config==='placeholder'?SRC.replace(/const FIREBASE_CONFIG = \{[\s\S]*?\};/,cfg):SRC;
-  vm.runInContext(src+`;globalThis.X={get S(){return S},set S(v){S=v},form:f=>Object.assign(form,f),getForm:()=>form,record,delLog,exp,imp,save,blank,calc,mkTx,rank,eff,rollover,rolloverBanner,vRec,vCards,vData,vBenefits,vLog,render,explainHTML,showExplain,closePop,calcBest,resolveDateFromText,addDays,setTab:t=>{tab=t},POOLS,RULES,CARDS,CATS,CHARGERS,curMonth,usedAmt,cnt,exThis,trThis,resetMonth,clearLog,resetAll,cloudLogin,cloudLogout,cloudSyncNow,cloudUI,cloudReady,pushNow,get syncMsg(){return syncMsg},get timer(){return syncTimer},get user(){return fbUser},gkGet,gkSave,gkDelete,gkSaveUI,getGeminiKey,parseNaturalLanguage,validateNL,nlRun,setNl:t=>{nlText=t},GEMINI_MODELS,setRetryMs:v=>{GEMINI_RETRY_MS=v},docRef:()=>docRef()}`,ctx);
+  vm.runInContext(src+`;globalThis.X={get S(){return S},set S(v){S=v},form:f=>Object.assign(form,f),getForm:()=>form,record,delLog,exp,imp,save,blank,calc,mkTx,rank,eff,rollover,rolloverBanner,vRec,vCards,vData,vBenefits,vLog,render,explainHTML,showExplain,closePop,calcBest,resolveDateFromText,addDays,activeCards,toggleCard,finishPick,vPick,nhAreaTotals,nhExtraTotal,nhRanks,nhAreaOf,NH_POOLS,gainTxt,go,TABS,get tabNow(){return tab},sanitize,setTab:t=>{tab=t},POOLS,RULES,CARDS,CATS,CHARGERS,curMonth,usedAmt,cnt,exThis,trThis,resetMonth,clearLog,resetAll,cloudLogin,cloudLogout,cloudSyncNow,cloudUI,cloudReady,pushNow,get syncMsg(){return syncMsg},get timer(){return syncTimer},get user(){return fbUser},gkGet,gkSave,gkDelete,gkSaveUI,getGeminiKey,parseNaturalLanguage,validateNL,nlRun,setNl:t=>{nlText=t},GEMINI_MODELS,setRetryMs:v=>{GEMINI_RETRY_MS=v},docRef:()=>docRef()}`,ctx);
+  if(!fresh)vm.runInContext("S.setupDone=true;S.enabled=['shinhan','hana','samsung'];tab='rec';",ctx);
   return{X:ctx.X,ctx,dev,store};
 }
 let pass=0,fail=0;

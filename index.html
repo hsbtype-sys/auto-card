@@ -57,9 +57,11 @@ button.sm{padding:5px 9px;font-size:12px}
 .eh{margin-top:10px;font-weight:700;font-size:13px}.ed{font-size:12.5px;margin:4px 0;padding-left:8px;border-left:3px solid var(--line)}
 .ew{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--soft);border-left:4px solid var(--warn);font-size:12.5px}
 .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.pickrow{display:flex;align-items:flex-start;gap:12px;padding:12px 2px;border-top:1px solid var(--line);margin:0;color:var(--tx);font-size:14px}.pickrow:first-child{border-top:0}
+.pickrow input{width:22px;height:22px;flex:none;margin-top:2px}.pickrow>span{display:flex;flex-direction:column;gap:2px}.pickrow .mut{font-size:12px}
 .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;margin-right:6px;color:#fff;vertical-align:middle;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 /* 카드사 대표색: 신한 블루 / 하나 그린 / 삼성 블루(진한 남색) */
-.tag.sh{background:#0046ff}.tag.hn{background:#078a5d}.tag.ss{background:#1428a0}
+.tag.sh{background:#0046ff}.tag.hn{background:#078a5d}.tag.ss{background:#1428a0}.tag.n1{background:#0b7fab}.tag.n2{background:#b45309}
 .brow{padding:9px 0;border-top:1px solid var(--line)}.brow:first-of-type{border-top:0}
 .bh{font-weight:700;font-size:14px;margin-bottom:3px}
 .bl{display:flex;align-items:flex-start;gap:2px;font-size:13px;margin:3px 0}.bl .tag{flex:none;margin-top:1px}
@@ -117,9 +119,15 @@ const FIREBASE_CONFIG = {
   appId: "1:561120311017:web:a3da5d3e497ebfaf1de278"
 };
 // ───────────── 카드 정의 ─────────────
-const CARDS=[{id:'shinhan',name:'신한카드 EV',trLag:1},{id:'hana',name:'MG+ S 하나카드'},{id:'samsung',name:'삼성 iD EV',excl:['transit','taxi','hipass']}];
+// kind=신용/체크, reward=적립형(NH포인트 1P=1원으로 환산해 비교), noNew=신규발급 보장 조항 미적용, nh=스마트적립 카드
+const CARDS=[
+ {id:'shinhan',name:'신한카드 EV',trLag:1,kind:'신용',fee:'연회비 1.2만~1.5만원',blurb:'전기차 충전 30~50%, 마트 주말·편의점 등 10%'},
+ {id:'hana',name:'MG+ S 하나카드',kind:'신용',fee:'연회비 1.7만원',blurb:'간편결제 10%, 스트리밍·멤버십 50%'},
+ {id:'samsung',name:'삼성 iD EV',excl:['transit','taxi','hipass'],kind:'신용',fee:'연회비 1.5만원',blurb:'충전 50~70%, 배달·스트리밍, 해외 1%'},
+ {id:'nhnew',name:'농협 올바른 NEW HAVE 체크',kind:'체크',fee:'연회비 없음',reward:1,noNew:1,nh:1,blurb:'모든 곳 0.2% 적립 + 이용 1·2위 영역 추가적립 (Mastercard/국내전용)'},
+ {id:'nhone',name:'농협 올바른 NEW HAVE 원이 체크',kind:'체크',fee:'연회비 없음',reward:1,noNew:1,nh:1,blurb:'뉴해브와 동일 적립 + 올원뱅크 해외결제 수수료 캐시백 (UnionPay/국내전용)'}];
 const CATS=[
- ['mart','🛒 대형마트 (이마트·롯데마트·홈플러스)'],['costco','🏬 코스트코 (현대카드만 결제 가능)'],['cvs','🏪 편의점'],['hosp','💊 병원/약국'],
+ ['mart','🛒 대형마트 (이마트·롯데마트·홈플러스)'],['costco','🏬 코스트코 (현대카드만 결제 가능)'],['online','🛍 온라인쇼핑 (쿠팡·11번가·G마켓·옥션·농협몰)'],['goods','🧴 잡화 (올리브영·다이소)'],['telecom','📞 이동통신 자동납부 (SKT·KT·LGU+)'],['cvs','🏪 편의점'],['hosp','💊 병원/약국'],
  ['coffee','☕ 커피전문점 (스벅·커피빈 등)'],['transit','🚇 대중교통 (버스·지하철)'],['taxi','🚕 택시'],
  ['charge','⚡ 전기차 충전'],['hipass','🛣 하이패스'],['parking','🅿 주차장 (케이엠파크)'],['driver','🚗 대리운전 (카카오T)'],
  ['delivery','🛵 배달앱 (배민·쿠팡이츠)'],['stream','🎬 영상 스트리밍 정기결제'],['member','🎟 디지털 멤버십 (네이버플러스·쿠팡와우 등)'],
@@ -267,29 +275,34 @@ const CHARGERS=[
 const OPCOL={shinhan:1,samsung:2};
 const opStatus=(cid,op)=>(op===''||op==null)?-1:CHARGERS[+op][OPCOL[cid]];
 const CKNAME={cvs:'편의점',hosp:'병원/약국',coffee:'커피'};
-const TH={shinhan:[3e5,5e5,6e5,1e6],hana:[3e5,6e5,1e6],samsung:[3e5,6e5]};
+const TH={shinhan:[3e5,5e5,6e5,1e6],hana:[3e5,6e5,1e6],samsung:[3e5,6e5],nhnew:[2e5,3e5,5e5],nhone:[2e5,3e5,5e5]};
 
 // ───────────── 상태 ─────────────
 const KEY='autocard.v1';
 const today=()=>new Date().toLocaleDateString('sv');
 const curMonth=()=>today().slice(0,7);
-const blank=()=>({monthKey:curMonth(),cards:Object.fromEntries(CARDS.map(c=>[c.id,{prev:0,newIssue:false,spend:0,base:{},tr1:0,tr2:0,trNow:0,ex1:0,exNow:0}])),log:[]});
+const LEGACY_CARDS=['shinhan','hana','samsung'];   // 카드 선택 기능 이전 데이터는 기존 3장을 사용 중인 것으로 간주
+const blank=()=>({monthKey:curMonth(),enabled:LEGACY_CARDS.slice(),setupDone:true,cards:Object.fromEntries(CARDS.map(c=>[c.id,{prev:0,newIssue:false,spend:0,base:{},tr1:0,tr2:0,trNow:0,ex1:0,exNow:0,intl:true,area:{}}])),log:[]});
 // 불러온 데이터(저장소·백업·클라우드)를 항상 현재 구조에 맞게 정리: 빠진 카드/필드 보충, 알 수 없는 기록 제거
 function sanitize(o){
   const d=blank();if(!o||typeof o!=='object'||Array.isArray(o))return d;
   const out={...o,monthKey:typeof o.monthKey==='string'&&/^\d{4}-\d{2}$/.test(o.monthKey)?o.monthKey:d.monthKey,cards:{}};
   for(const c of CARDS){const x=(o.cards&&typeof o.cards==='object'&&o.cards[c.id])||{},f=d.cards[c.id],n={...f,...x};
     for(const k of Object.keys(f))if(typeof f[k]==='number')n[k]=Number(n[k])||0;
-    n.newIssue=!!n.newIssue;n.base=x.base&&typeof x.base==='object'&&!Array.isArray(x.base)?x.base:{};out.cards[c.id]=n}
+    n.newIssue=!!n.newIssue;n.intl=n.intl!==false;n.base=x.base&&typeof x.base==='object'&&!Array.isArray(x.base)?x.base:{};
+    n.area=x.area&&typeof x.area==='object'&&!Array.isArray(x.area)?x.area:{};out.cards[c.id]=n}
+  const en=Array.isArray(o.enabled)?o.enabled.filter(id=>CARDS.some(c=>c.id===id)):LEGACY_CARDS.slice();   // 선택 정보가 없던 예전 데이터 → 기존 3장
+  out.enabled=CARDS.map(c=>c.id).filter(id=>en.includes(id));out.setupDone=o.setupDone!==false;
   out.log=(Array.isArray(o.log)?o.log:[]).filter(l=>l&&typeof l==='object'&&CARDS.some(c=>c.id===l.card)&&CATNAME[l.cat]!==undefined&&typeof l.date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(l.date))
     .map(l=>({...l,amount:Number(l.amount)||0,disc:Number(l.disc)||0}));
   return out}
-let S;try{S=sanitize(JSON.parse(localStorage.getItem(KEY)))}catch(e){S=blank()}
+let S;try{const raw=JSON.parse(localStorage.getItem(KEY));S=sanitize(raw);if(!raw){S.enabled=[];S.setupDone=false}}catch(e){S=blank();S.enabled=[];S.setupDone=false}   // 완전 새 사용자는 카드 선택부터
+const activeCards=()=>CARDS.filter(c=>(S.enabled||[]).includes(c.id));
 const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
 // S._ts = 마지막 수정 시각(ms). 기기 간 최신 판단과 '내가 방금 쓴 변경' 식별에 사용
 const save=()=>{S._ts=Date.now();saveLocal();cloudSchedule()};
 const hashTab=typeof location!=='undefined'?location.hash.slice(1):'';
-let tab=['rec','cards','log','data','benefits'].includes(hashTab)?hashTab:'rec',form={amount:'',cat:'mart',date:today(),sp:false,ov:false,pt:'m',op:''};
+let tab=['rec','cards','pick','log','data','benefits'].includes(hashTab)?hashTab:'rec',form={amount:'',cat:'mart',date:today(),sp:false,ov:false,pt:'m',op:''};
 
 const won=n=>Math.round(n).toLocaleString('ko-KR')+'원';
 // 신한 EV: 전월 실적에서 '전월 교통카드 이용액(tr1)'은 빼고 '전전월 교통카드 이용액(tr2)'을 더한다.
@@ -297,21 +310,57 @@ const eff=cid=>{const c=S.cards[cid];let p=c.prev;
   if(CARDS.find(x=>x.id===cid).trLag)p=Math.max(0,p-(c.tr1||0)+(c.tr2||0));
   const cd=CARDS.find(x=>x.id===cid);
   if(cd.excl)p=Math.max(0,p-(c.ex1||0));   // 삼성: 대중교통·택시·하이패스는 전월 실적 제외
-  return c.newIssue?Math.max(p,K):p};
+  return c.newIssue&&!cd.noNew?Math.max(p,K):p};
 const exThis=cid=>{const cd=CARDS.find(x=>x.id===cid);if(!cd.excl)return 0;
   return (S.cards[cid].exNow||0)+S.log.filter(l=>l.card===cid&&cd.excl.includes(l.cat)&&l.date.startsWith(S.monthKey)).reduce((a,l)=>a+l.amount,0)};
 const trThis=cid=>(S.cards[cid].trNow||0)+S.log.filter(l=>l.card===cid&&l.cat==='transit'&&l.date.startsWith(S.monthKey)).reduce((a,l)=>a+l.amount,0);
 const per=(p,d)=>p.year?d.slice(0,4):d.slice(0,7);
 const logSum=(cid,f)=>S.log.filter(l=>l.card===cid&&f(l)).reduce((a,l)=>a+l.disc,0);
-const usedAmt=(cid,pid,date)=>{const P=POOLS[cid][pid],k=per(P,date);
+const usedAmt=(cid,pid,date)=>{const P=POOLS[cid][pid],k=per(P,date);if(P.used)return P.used(cid,date);
   return (S.cards[cid].base['$'+pid]||0)+logSum(cid,l=>l.pool===pid&&per(P,l.date)===k)};
 const cnt=(cid,ck,scope,date)=>{
   const n=S.log.filter(l=>l.card===cid&&l.ck===ck&&(scope==='d'?l.date===date:l.date.slice(0,scope==='y'?4:7)===date.slice(0,scope==='y'?4:7))).length;
   return scope==='m'?n+(S.cards[cid].base['#'+ck]||0):n};
 const monthSpend=cid=>S.cards[cid].spend+S.log.filter(l=>l.card===cid&&l.date.startsWith(S.monthKey)).reduce((a,l)=>a+l.amount,0);
 
+// ───────────── 농협 올바른 NEW HAVE 체크 / 원이 체크 (적립형) ─────────────
+// 기본적립 0.2%(모든 가맹점, 실적·한도 없음) + 스마트적립: 6개 영역 중 그 달 이용금액 1위 영역 +0.4%, 2위 +0.2% (전월실적 20만원↑, 추가분 월 5천P)
+// 순위는 월말 이용금액으로 확정되므로, '이 결제를 반영했을 때 월말 추가적립이 얼마나 늘어나는지'(한계 증가분)를 현재 기록 기준으로 예상한다
+const NH_AREA={online:1,delivery:1,mart:2,goods:2,telecom:3,stream:3,transit:4,taxi:4,coffee:5,cvs:5,overseas:6};
+const NH_AREA_NAME=['','① 온라인쇼핑·배달앱','② 오프라인쇼핑·잡화','③ 이동통신·구독','④ 대중교통·택시','⑤ 커피·편의점','⑥ 해외'];
+const NH_MIN=2e5,NH_CAP=5e3;
+const nhAreaOf=(cat,ov)=>(ov||cat==='overseas')?6:(NH_AREA[cat]||0);
+function nhAreaTotals(cid,date){                       // 이번 달 영역별 이용금액 = 앱 기록 + 직접입력(앱 밖 사용)
+  const t=[0,0,0,0,0,0,0],man=(S.cards[cid]&&S.cards[cid].area)||{};
+  for(let i=1;i<=6;i++)t[i]=+man[i]||0;
+  S.log.filter(l=>l.card===cid&&l.date.slice(0,7)===date.slice(0,7)).forEach(l=>{const a=nhAreaOf(l.cat,l.ov);if(a)t[a]+=l.amount});
+  return t}
+function nhRanks(t){return[1,2,3,4,5,6].filter(i=>t[i]>0).sort((a,b)=>t[b]-t[a]||a-b)}   // 금액 큰 순, 같으면 영역 번호 순
+function nhExtraTotal(t,prev){
+  if(prev<NH_MIN)return 0;const r=nhRanks(t);let e=0;
+  if(r[0])e+=Math.floor(t[r[0]]*.004);if(r[1])e+=Math.floor(t[r[1]]*.002);
+  return Math.min(NH_CAP,e)}
+const NH_POOLS={
+  base:{l:'기본적립 0.2% (한도 없음)',lim:()=>Infinity,ro:1},
+  smart:{l:'스마트적립 추가분 (월 5천P · 현재 기록 기준 예상)',lim:p=>p>=NH_MIN?NH_CAP:0,ro:1,used:(cid,date)=>nhExtraTotal(nhAreaTotals(cid,date),eff(cid))}};
+function nhFn(cid,r,tx,prev){
+  const area=nhAreaOf(tx.cat,tx.ov),base=Math.floor(tx.amount*.002);
+  let extra=0,rank=0,why=[`기본 0.2% ${base}P`];
+  if(area){
+    const t=nhAreaTotals(cid,tx.date),before=nhExtraTotal(t,prev);t[area]+=tx.amount;
+    const after=nhExtraTotal(t,prev);rank=nhRanks(t).indexOf(area)+1;extra=Math.max(0,after-before);
+    if(prev<NH_MIN)why.push(`스마트적립은 전월 실적 ${won(NH_MIN)} 이상부터 (현재 ${won(prev)})`);
+    else why.push(`${NH_AREA_NAME[area]} 현재 ${rank}위${rank<=2?` → 추가 ${extra}P`:' (1·2위 아니면 추가적립 없음)'}`);
+  }
+  const disc=base+extra;
+  return{disc,rule:r,pool:'base',ck:null,why:why.join(' · '),nh:{base,extra,area,rank,prev}};
+}
+Object.assign(POOLS,{nhnew:NH_POOLS,nhone:NH_POOLS});
+Object.assign(RULES,{nhnew:[{c:'*',p:'base',fn:nhFn}],nhone:[{c:'*',p:'base',fn:nhFn}]});
+
 // ───────────── 계산 엔진 ─────────────
 function evalRule(cid,r,tx,prev){
+  if(r.fn)return r.fn(cid,r,tx,prev);                 // 규칙이 직접 계산하는 카드(농협 스마트적립 등)
   const P=POOLS[cid][r.p];
   if(r.wk&&!tx.wk)return{disc:0,why:'주말(토·일)에만 적용'};
   const lim=P.lim(prev);
@@ -350,7 +399,11 @@ function calc(cid,tx){
 const mkTx=sp=>({amount:+form.amount||0,cat:form.cat,date:form.date,sp,op:form.op,ov:!!form.ov,pt:form.pt,wk:[0,6].includes(new Date(form.date+'T00:00').getDay())});
 // 카드마다 유리한 결제 방식이 다르므로(하나 MG+ 간편결제 10% / 신한·삼성 직접결제) 두 방식을 모두 계산해 더 큰 쪽을 쓴다.
 // 결과 sp=true면 '간편결제로 결제해야 적용'된다는 뜻 (화면에 주의 문구 표시)
+const gainTxt=(c,n)=>c.reward?(n>0?`+${n.toLocaleString('ko-KR')}P`:'0P'):(n>0?'-'+won(n):'0원');
+const gainWord=c=>c.reward?'적립':'할인';
 function calcBest(cid,tx){
+  const cd=CARDS.find(c=>c.id===cid);
+  if(cd.nh&&S.cards[cid].intl===false&&(tx.ov||tx.cat==='overseas'))return{disc:0,sp:false,blocked:true,why:'국내전용 카드는 해외에서 사용할 수 없어요'};
   const pb=payBlocked(tx.cat);
   if(pb)return{disc:0,sp:false,blocked:true,why:`결제 불가 — ${pb.shop}는 ${pb.only}만 사용할 수 있어요`};
   const a=calc(cid,{...tx,sp:false}),b=calc(cid,{...tx,sp:true});
@@ -358,7 +411,7 @@ function calcBest(cid,tx){
   if(b.disc>a.disc||(hasSp&&a.disc===0&&b.disc===0))return{...b,sp:true};
   return{...a,sp:false};
 }
-const rank=()=>{const tx=mkTx(false);return CARDS.map(c=>({c,...calcBest(c.id,tx)})).sort((a,b)=>b.disc-a.disc)};
+const rank=()=>{const tx=mkTx(false);return activeCards().map(c=>({c,...calcBest(c.id,tx)})).sort((a,b)=>b.disc-a.disc)};
 const SIMPLEPAY_WARN='⚠ 간편결제(네이버페이·카카오페이·토스페이·SSG페이·11pay·스마일페이)로 결제해야 적용됩니다. 실물카드·직접결제 시에는 할인이 없어요.';
 
 // ───────────── 클라우드 동기화 (Firebase Auth + Firestore, 선택 기능) ─────────────
@@ -580,8 +633,8 @@ async function nlRun(){
 const man=n=>{const m=Math.floor(n/1e4),c=Math.round((n%1e4)/1e3);return(m?m+'만':'')+(c?c+'천':'')+'원'};
 const LIM=(cid,pid,p)=>man(POOLS[cid][pid].lim(p));
 const chargerNames=col=>CHARGERS.filter(c=>c[col]).map(c=>c[0].replace(/\s*\(.*\)$/,'')+(c[col]===2?'(△)':'')).join(', ');
-const TAG={shinhan:['신한','sh'],hana:['하나','hn'],samsung:['삼성','ss']};
-const tag=cid=>`<span class="tag ${TAG[cid][1]}">${TAG[cid][0]}</span>`;
+const TAG={shinhan:['신한','sh'],hana:['하나','hn'],samsung:['삼성','ss'],nhnew:['뉴해브','n1'],nhone:['원이','n2']};
+const tag=cid=>Array.isArray(cid)?cid.map(tag).join(''):`<span class="tag ${TAG[cid][1]}">${TAG[cid][0]}</span>`;
 // 항목별 한눈에 보기: [항목, [[카드, 내용], ...]]  (해당 카드가 없으면 그 카드는 혜택 없음)
 function benefitRows(){return[
  ['🛒 대형마트 (이마트·롯데마트·홈플러스)',[['shinhan','주말(토·일) 10% · 일 1회 · 1회 5만원까지 (창고형·온라인몰 제외)']]],
@@ -596,7 +649,10 @@ function benefitRows(){return[
  ['🎟 디지털 멤버십',[['hana','50% · 네이버플러스멤버십·컬리멤버스·쿠팡와우멤버십 (월 정기결제)']]],
  ['📱 간편결제',[['hana','10% · 네이버페이·카카오페이·토스페이·SSG페이·11pay·스마일페이 · 건당 1만원 이상 결제 시']]],
  ['🛡 현대해상 다이렉트 자동차보험',[['shinhan','30만원 이상 결제 시 3만원 할인'],['samsung','30만원 이상 결제 시 3만원 할인 · 연 1회']]],
- ['🌏 해외 결제',[['samsung','1% · 전월 실적·한도 없음 (해외겸용 카드)']]],
+ ['🌏 해외 결제',[['samsung','1% · 전월 실적·한도 없음 (해외겸용 카드)'],['nhone','올원뱅크 해외결제 서비스로 결제 시 해외서비스수수료 $0.5 캐시백 · 전월 20만원↑ · 월 5회 · 건당 $1 이상']]],
+ ['🧾 기본적립 (모든 가맹점)',[[['nhnew','nhone'],'0.2% NH포인트 적립 · 전월 실적·한도 없음 (공과금·상품권/선불 충전·등록금 등은 제외)']]],
+ ['⭐ 스마트적립 (6개 영역 중 이용금액 1·2위)',[[['nhnew','nhone'],`1위 영역 +0.4%(총 0.6%) · 2위 영역 +0.2%(총 0.4%) · 전월 ${man(NH_MIN)}↑ · 추가분 월 ${NH_CAP.toLocaleString('ko-KR')}P · 익월 15일 이후 적립`],[['nhnew','nhone'],'영역: ①온라인쇼핑·배달앱 ②오프라인쇼핑(이마트·홈플러스·롯데마트·하나로마트)·잡화(올리브영·다이소) ③이동통신·구독 ④대중교통·택시 ⑤커피·편의점 ⑥해외']]],
+ ['🏦 농협 부가서비스',[[['nhnew','nhone'],'농협 인터넷·모바일·스마트·텔레뱅킹 이체수수료 통합 월 5회 면제 · 전월 30만원↑ (본인회원 명의 계좌)'],[['nhnew','nhone'],'국제공항 라운지 무료이용 연 1회 · 전월 50만원↑ (카드 사용등록월 제외)']]],
 ];}
 function benefitCards(){
   const t1=(cid,pid)=>[3e5,5e5,1e6].map(p=>LIM(cid,pid,p));
@@ -627,7 +683,18 @@ function benefitCards(){
     `<b>스트리밍 20%</b> — 넷플릭스·웨이브·티빙·왓챠·멜론·FLO 정기결제, 월 ${LIM('samsung','stream',3e5)} (30만↑, 앱스토어 인앱결제 제외)`,
     '<b>자동차보험</b> 현대해상 다이렉트 30만원 이상 결제 시 3만원 할인 (연 1회)',
     '<b>해외 1%</b> — 전월 실적·한도 없음 (해외겸용 카드)'],
-   notes:['다른 결제일할인과 중복 적용되지 않으며 할인 금액이 큰 것만 적용','전월 실적 제외: 공과금·4대보험·국세·지방세, 학교납입금·등록금, 대중교통·택시·하이패스 통행료, 아파트 관리비, 부동산 임대료, 기프트·선불카드, 상품권','할인 제외: 무이자할부, 삼성카드 할인이 적용된 금액, 기프트·선불카드, 상품권','자체 가맹점번호로 승인되는 일부 결제건(간편결제·키오스크 등)은 할인 제외','충전 할인은 대상 충전소 멤버십 가입 후 카드를 결제카드로 등록하거나, 충전기기 이용 후 카드로 결제한 경우 (아파트 관리비에 포함된 충전요금 제외)','충전사업자 시트에는 신규 발급 중단으로 표기']}];
+   notes:['다른 결제일할인과 중복 적용되지 않으며 할인 금액이 큰 것만 적용','전월 실적 제외: 공과금·4대보험·국세·지방세, 학교납입금·등록금, 대중교통·택시·하이패스 통행료, 아파트 관리비, 부동산 임대료, 기프트·선불카드, 상품권','할인 제외: 무이자할부, 삼성카드 할인이 적용된 금액, 기프트·선불카드, 상품권','자체 가맹점번호로 승인되는 일부 결제건(간편결제·키오스크 등)은 할인 제외','충전 할인은 대상 충전소 멤버십 가입 후 카드를 결제카드로 등록하거나, 충전기기 이용 후 카드로 결제한 경우 (아파트 관리비에 포함된 충전요금 제외)','충전사업자 시트에는 신규 발급 중단으로 표기']},
+  ...['nhnew','nhone'].map(id=>{const one=id==='nhone';return{cid:id,title:one?'농협 올바른 NEW HAVE 원이 체크카드':'농협 올바른 NEW HAVE 체크카드',
+   fee:one?'연회비: 없음 (국내전용 / 해외겸용 UnionPay) · 가족카드 발급 불가':'연회비: 없음 (Local / Mastercard)',
+   tier:`전월 실적 구간: ${man(NH_MIN)}↑(스마트적립) / 30만원↑(이체수수료 면제) / 50만원↑(공항 라운지) — 해외 이용금액은 매출표 접수일 기준`,
+   items:[
+    '<b>기본적립 0.2%</b> — 국내외 모든 가맹점 NH포인트, 전월 실적·한도 없음',
+    `<b>스마트적립</b> — 아래 6개 영역 중 그 달 이용금액 <b>1위 영역 +0.4%(총 0.6%)</b>, <b>2위 영역 +0.2%(총 0.4%)</b>. 전월 실적 ${man(NH_MIN)}↑, 추가분 월 ${NH_CAP.toLocaleString('ko-KR')}P 한도, 익월 15일 이후 일괄 적립`,
+    '영역: ① 온라인쇼핑·배달앱(11번가·G마켓·옥션·쿠팡·농협몰 / 배달의민족·요기요) ② 오프라인쇼핑·잡화(이마트·홈플러스·롯데마트·하나로마트 / 올리브영·다이소) ③ 이동통신·구독(SKT·KT·LGU+ 자동납부 / 유튜브 프리미엄·넷플릭스·웨이브·멜론 정기결제) ④ 대중교통·택시(지하철·시내외버스 / 택시) ⑤ 커피·편의점(스타벅스·이디야·투썸플레이스 / GS25·CU·세븐일레븐) ⑥ 해외(해외 전 가맹점, 해외 온라인쇼핑 포함)',
+    '<b>이체수수료</b> 농협 인터넷·모바일·스마트·텔레뱅킹 통합 월 5회 면제 (전월 30만원↑, 본인회원 명의 계좌)',
+    '<b>공항 라운지</b> 연 1회 무료 (전월 50만원↑, 인천 T1·T2 스카이허브/마티나, 김포·김해 스카이허브 — 카드 사용등록월 제외)',
+    ...(one?['<b>해외결제 캐시백</b> 올원뱅크 해외결제 서비스로 해외가맹점 결제 시 해외서비스수수료 $0.5 캐시백 (전월 20만원↑, 월 5회, 건당 $1 이상)']:[])],
+   notes:['영역별 이용금액이 같으면 영역 번호(①~⑥) 순으로 순위가 정해져요','잡화·커피·편의점은 역사·백화점·할인점(아울렛) 입점 매장 결제건이 이용금액·적립에서 제외돼요','대중교통은 실물카드 후불교통(RF) 결제건만 해당 · 스타벅스는 사이렌오더 포함','적립·실적 제외: 등록금·교육비, 임대료, 세금·공과금, 상하수도·전기·도시가스 요금, 과태료, 우편요금, 4대보험, 아파트관리비, 상품권·선불카드 구매(충전 포함), 현금서비스·카드론, 수수료·이자, 연체료, 연회비, 취소금액, 포인트 사용분'+(one?', 가상화폐 거래소 이용금액':''),'적립형(NH포인트) 체크카드예요. 앱은 1P=1원으로 환산해 비교하며, 스마트적립 순위는 앱에 기록한 이번 달 이용금액으로 예상해요','국내전용(Local)카드는 해외 이용이 불가해 해외 영역 적립이 적용되지 않아요','신규 발급 보장 조항은 안내장 표현이 모호해 앱에서는 적용하지 않아요'+(one?'':'')]}})];
 }
 function vBenefits(){
   const rows=benefitRows().map(([name,list])=>`<div class="brow"><div class="bh">${name}</div>${list.map(([cid,txt])=>`<div class="bl">${tag(cid)}<span>${txt}</span></div>`).join('')}</div>`).join('');
@@ -652,8 +719,27 @@ function printBenefits(){
   setTimeout(back,60000);
 }
 
+// ───────────── 카드 선택 ─────────────
+function toggleCard(id,on){
+  const set=new Set(S.enabled||[]);on?set.add(id):set.delete(id);
+  S.enabled=CARDS.map(c=>c.id).filter(x=>set.has(x));save();render();
+}
+function finishPick(){
+  if(!S.enabled.length)return alert('사용하는 카드를 하나 이상 선택해 주세요.');
+  S.setupDone=true;save();go('cards');toast('선택 완료! 전월 실적을 입력해 주세요');
+}
+function vPick(){
+  const first=!S.setupDone,n=S.enabled.length;
+  return`<h1>${first?'사용하는 카드를 선택하세요':'카드 선택'}</h1>
+  <div class="hint">체크한 카드만 <b>결제카드분석(비교)</b>과 <b>내 카드(실적 관리)</b>에 나옵니다.<br>체크를 해제해도 기록과 입력한 실적은 지워지지 않고, 다시 체크하면 이어집니다.</div>
+  <div class="card">${CARDS.map(c=>`<label class="pickrow"><input type="checkbox" ${S.enabled.includes(c.id)?'checked':''} onchange="toggleCard('${c.id}',this.checked)">
+      <span><span class="pn">${tag(c.id)} <b>${c.name}</b></span><span class="mut">${c.kind}카드 · ${c.fee}</span><span class="mut">${c.blurb}</span></span></label>`).join('')}</div>
+  <div class="mut" style="margin:0 2px 10px">선택한 카드 <b>${n}장</b> · 카드별 혜택은 메뉴의 <a href="javascript:go('benefits')">전체카드혜택</a>에서 볼 수 있어요.</div>
+  ${first||!n?`<button onclick="finishPick()" style="width:100%">${n?'선택 완료 → 실적 입력하기':'카드를 선택하세요'}</button>`:`<button class="ghost" onclick="go('rec')" style="width:100%">결제카드분석으로 돌아가기</button>`}`;
+}
+
 // ───────────── 화면 ─────────────
-const TABS=[['rec','💡 결제카드분석'],['cards','💳 내 카드'],['log','🧾 기록'],['data','⚙️ 데이터 · 계정'],['benefits','🎁 전체카드혜택']];
+const TABS=[['rec','💡 결제카드분석'],['cards','💳 내 카드'],['pick','☑️ 카드 선택'],['log','🧾 기록'],['data','⚙️ 데이터 · 계정'],['benefits','🎁 전체카드혜택']];
 let menuOpen=false;
 function setMenu(v){menuOpen=v;const m=document.getElementById('menu'),sc=document.getElementById('scrim'),b=document.getElementById('mbtn');
   m.hidden=!v;sc.hidden=!v;if(b.setAttribute)b.setAttribute('aria-expanded',String(v));if(b.classList)b.classList.toggle('open',v)}
@@ -661,10 +747,11 @@ const toggleMenu=()=>setMenu(!menuOpen),closeMenu=()=>setMenu(false);
 function go(k){tab=k;closeMenu();render();if(window.scrollTo)window.scrollTo(0,0)}
 window.addEventListener('keydown',e=>{if(e.key==='Escape'){if(menuOpen)closeMenu();closePop()}});
 function render(){
+  if(!S.setupDone&&tab!=='pick'&&tab!=='benefits')tab='pick';   // 처음 사용하는 사람은 카드 선택부터 (헤더 이름보다 먼저 결정)
   document.getElementById('menu').innerHTML=TABS.map(([k,l])=>`<button role="menuitem" class="${tab===k?'on':''}${k==='data'?' sep':''}" onclick="go('${k}')">${l}</button>`).join('');
   document.getElementById('pg').textContent=(TABS.find(t=>t[0]===tab)||['',''])[1].replace(/^\S+\s/,'');
   const el=document.getElementById('app');
-  const fn={rec:vRec,cards:vCards,log:vLog,data:vData,benefits:vBenefits}[tab];
+  const fn={rec:vRec,cards:vCards,pick:vPick,log:vLog,data:vData,benefits:vBenefits}[tab];
   const keep=document.activeElement&&document.activeElement.id;
   el.innerHTML=rolloverBanner()+fn();
   if(keep){const n=document.getElementById(keep);if(n){n.focus();try{n.setSelectionRange(n.value.length,n.value.length)}catch(e){}}}
@@ -678,28 +765,30 @@ function rollover(){
     const cs=S.cards[c.id],m=monthSpend(c.id);
     if(c.excl){cs.ex1=exThis(c.id);cs.exNow=0}
     if(c.trLag){cs.tr2=cs.tr1||0;cs.tr1=trThis(c.id);cs.trNow=0}
-    cs.prev=m;cs.spend=0;
+    cs.prev=m;cs.spend=0;cs.area={};
     for(const k of Object.keys(cs.base)){const pid=k.slice(1);
       if(k[0]==='#'||!(POOLS[c.id][pid]||{}).year)delete cs.base[k]}
   }
   S.monthKey=curMonth();save();render();
 }
 function vRec(){
+  if(!activeCards().length)return`<h1>어떤 카드로 결제할까?</h1><div class="hint warn">비교할 카드가 선택되지 않았어요.<br>메뉴의 <b>카드 선택</b>에서 사용하는 카드를 체크해 주세요.<br><button class="sm" style="margin-top:8px" onclick="go('pick')">카드 선택으로 이동</button></div>`;
   const ok=+form.amount>0,pb=payBlocked(form.cat);
-  let out=pb?`<div class="hint warn" style="margin-top:0"><b>🚫 ${pb.shop}는 ${pb.only}만 결제할 수 있어요</b><br>${CARDS.map(c=>c.name).join(' · ')}는 ${pb.shop}에서 결제할 수 없습니다. ${pb.only} 등 다른 카드를 준비하세요.</div>`:'';
+  let out=pb?`<div class="hint warn" style="margin-top:0"><b>🚫 ${pb.shop}는 ${pb.only}만 결제할 수 있어요</b><br>${activeCards().map(c=>c.name).join(' · ')}는 ${pb.shop}에서 결제할 수 없습니다. ${pb.only} 등 다른 카드를 준비하세요.</div>`:'';
   if(ok){
     const r=rank();
     out+=r.map((x,i)=>x.blocked?`<div class="res" style="opacity:.75">
       <div class="top"><span class="nm">${x.c.name}</span><span class="amt" style="font-size:16px;color:var(--bad)">결제 불가</span></div>
       <div class="dt">${x.why}</div></div>`:`<div class="res ${i===0&&x.disc>0?'best':''}">
-      <div class="top"><span class="nm">${x.c.name}${i===0&&x.disc>0?'<span class="badge">추천</span>':''}</span><span class="amt">${x.disc>0?'-'+won(x.disc):'0원'}</span></div>
+      <div class="top"><span class="nm">${x.c.name}${i===0&&x.disc>0?'<span class="badge">추천</span>':''}</span><span class="amt">${gainTxt(x.c,x.disc)}</span></div>
       <div class="dt">${x.why}${x.c.excl&&x.c.excl.includes(form.cat)?'<br>※ 이 결제는 삼성 전월 실적에서 제외됩니다':''}</div>
       ${x.sp&&x.disc>0?`<div class="dt" style="color:var(--warn);margin-top:4px">${SIMPLEPAY_WARN}</div>`:''}
-      <div class="btnrow"><button class="sm ${i===0&&x.disc>0?'':'ghost'}" onclick="record('${x.c.id}')">이 카드로 결제 기록</button><button class="sm ghost" onclick="showExplain('${x.c.id}')">예상 할인 내역</button></div></div>`).join('');
+      <div class="btnrow"><button class="sm ${i===0&&x.disc>0?'':'ghost'}" onclick="record('${x.c.id}')">이 카드로 결제 기록</button><button class="sm ghost" onclick="showExplain('${x.c.id}')">예상 ${gainWord(x.c)} 내역</button></div></div>`).join('');
     if(r[0].disc===0&&!pb){
-      const need=CARDS.map(c=>({c,gap:K-eff(c.id)})).filter(x=>x.gap>0).sort((a,b)=>a.gap-b.gap)[0];
+      const need=activeCards().filter(c=>!c.nh).map(c=>({c,gap:K-eff(c.id)})).filter(x=>x.gap>0).sort((a,b)=>a.gap-b.gap)[0];
       if(need)out+=`<div class="hint">전월 실적을 채우면 혜택이 열리는 카드: <b>${need.c.name}</b> (${won(need.gap)} 부족)</div>`;
     }
+    if(r.some(x=>x.c.reward&&!x.blocked))out+=`<div class="mut" style="margin:2px 2px 10px">※ 농협 카드의 적립은 NH포인트(1P=1원)로 환산해 비교한 값이에요. 스마트적립(영역 1·2위)은 월말 이용금액으로 확정되므로 앱에 기록한 이번 달 이용 내역 기준의 예상치입니다.</div>`;
   }
   return`<h1>어떤 카드로 결제할까?</h1>
   <div class="card">
@@ -728,11 +817,33 @@ function ruleDesc(cid,r,prev){
   if(r.dm)parts.push(`일 ${r.dm}회`);if(r.mm)parts.push(`월 ${r.mm}회`);if(r.ym)parts.push(`연 ${r.ym}회`);
   return`${r.c==='*'?'모든 가맹점':CATNAME[r.c]}: ${parts.join(' · ')} <span class="mut">(${P.l})</span>`;
 }
+function nhExplain(cid,tx,res,title){
+  const n=res.nh,card=CARDS.find(c=>c.id===cid),prev=n.prev,P=(x)=>`${x.toLocaleString('ko-KR')}P`;
+  let rows=er('결제 금액',won(tx.amount))+er('결제처',CATNAME[tx.cat])+er('기본적립 0.2%',`${won(tx.amount)} × 0.2% = ${P(n.base)}`);
+  if(!n.area)rows+=er('스마트적립 영역','해당 없음 (기본적립만)');
+  else{
+    rows+=er('스마트적립 영역',NH_AREA_NAME[n.area]);
+    if(prev<NH_MIN)rows+=er('스마트적립',`전월 실적 ${won(NH_MIN)} 이상부터 (현재 ${won(prev)})`,'neg');
+    else{
+      const t=nhAreaTotals(cid,tx.date),before=nhExtraTotal(t,prev);t[n.area]+=tx.amount;
+      rows+=er('이 결제 반영 후 영역 순위',`${n.rank}위 <span class="mut">(${won(t[n.area])})</span>`)+
+        er('이번 달 추가적립 예상',`${P(before)} → ${P(nhExtraTotal(t,prev))} <span class="mut">(월 ${P(NH_CAP)} 한도)</span>`)+
+        er('이 결제로 늘어나는 추가적립',n.rank<=2||n.extra>0?`+${P(n.extra)}`:'없음 (1·2위 영역만 추가적립)');
+    }
+  }
+  rows+=er('예상 적립',`<span class="pos">+${P(res.disc)}</span>`,'big');
+  const warn=['스마트적립 순위는 월말 이용금액으로 확정돼요. 위 값은 앱에 기록한 이번 달 내역 기준 예상이며, 추가적립은 익월 15일 이후 일괄 적립됩니다'];
+  if(tx.cat==='transit')warn.push('대중교통은 실물카드 후불교통(RF) 결제건만 해당돼요');
+  if(['coffee','cvs','goods'].includes(tx.cat))warn.push('역사·백화점·할인점(아울렛) 입점 매장 결제는 적립에서 제외돼요');
+  if(tx.cat==='coffee')warn.push('스타벅스는 사이렌오더 포함, 이디야·투썸플레이스도 대상이에요');
+  return title+rows+`<div class="ew">${warn.map(t=>'⚠ '+t).join('<br>')}</div><div class="mut" style="margin-top:10px">※ NH포인트는 1P=1원으로 환산한 값이에요. 실제 적립은 카드사 정산에 따라 다를 수 있어요.</div>`;
+}
 function explainHTML(cid,tx,res){
-  const card=CARDS.find(c=>c.id===cid),prev=eff(cid),title=`<h3>${tag(cid)} ${card.name} · 예상 할인 내역</h3>`;
+  const card=CARDS.find(c=>c.id===cid),prev=eff(cid),title=`<h3>${tag(cid)} ${card.name} · 예상 ${gainWord(card)} 내역</h3>`;
   const head=er('결제 금액',won(tx.amount))+er('결제처',CATNAME[tx.cat])+er('결제 방식',res.sp?'간편결제':'실물카드 · 직접결제');
   const foot=`<div class="mut" style="margin-top:10px">※ 입력하신 실적과 기록을 기준으로 한 예상 금액이며, 실제 할인은 카드사 정산에 따라 다를 수 있어요.</div>`;
   if(res.blocked)return title+head+er('결과','결제 불가','neg')+`<div class="mut" style="margin-top:6px">${res.why}</div>`+foot;
+  if(res.nh)return nhExplain(cid,tx,res,title);
   const r=res.rule;
   if(!(res.disc>0)||!r){   // 할인 없음: 이유 + 이 카드의 해당 혜택 설명
     const rel=RULES[card.id].filter(x=>x.c==='*'||x.c===tx.cat||(x.c==='overseas'&&tx.ov));
@@ -773,22 +884,24 @@ function closePop(){const p=document.getElementById('pop');if(p)p.hidden=true}
 
 function record(cid){
   const tx=mkTx(false),e=calcBest(cid,tx);
+  if(!activeCards().some(c=>c.id===cid))return toast('선택하지 않은 카드예요. 카드 선택에서 체크해 주세요');
   if(e.blocked)return toast(e.why);
-  S.log.unshift({id:`${Date.now()}_${Math.random().toString(36).slice(2,8)}`,date:tx.date,card:cid,cat:tx.cat,amount:tx.amount,disc:e.disc,pool:e.pool||null,ck:e.disc>0?e.ck||null:null});
+  S.log.unshift({id:`${Date.now()}_${Math.random().toString(36).slice(2,8)}`,date:tx.date,card:cid,cat:tx.cat,amount:tx.amount,disc:e.disc,pool:e.pool||null,ck:e.disc>0?e.ck||null:null,...(tx.ov||tx.cat==='overseas'?{ov:true}:{})});
   save();form.amount='';tab='rec';render();
-  toast(`${CARDS.find(c=>c.id===cid).name} 기록됨 (할인 ${won(e.disc)})`);
+  const cd=CARDS.find(c=>c.id===cid);toast(`${cd.name} 기록됨 (${gainWord(cd)} ${cd.reward?e.disc.toLocaleString('ko-KR')+'P':won(e.disc)})`);
 }
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;
   d.style.cssText='position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#111;color:#fff;padding:9px 14px;border-radius:20px;font-size:13px;z-index:9';
   document.body.appendChild(d);setTimeout(()=>d.remove(),1800)}
 
 function vCards(){
-  return`<h1>내 카드 · 실적 입력</h1>`+CARDS.map(c=>{
+  if(!activeCards().length)return`<h1>내 카드 · 실적 입력</h1><div class="hint warn">선택된 카드가 없어요. <a href="javascript:go('pick')">카드 선택</a>에서 사용하는 카드를 체크해 주세요.</div>`;
+  return`<h1>내 카드 · 실적 입력</h1>`+activeCards().map(c=>{
     const cs=S.cards[c.id],prev=eff(c.id),ms=monthSpend(c.id)-exThis(c.id),nx=(TH[c.id].find(t=>t>ms));
     const pools=Object.entries(POOLS[c.id]).map(([pid,P])=>{
       const lim=P.lim(prev),used=usedAmt(c.id,pid,today()),pct=lim===Infinity||!lim?0:Math.min(100,used/lim*100);
       return`<div>${P.l}<div class="mut">${lim===Infinity?'한도 없음':lim>0?`한도 ${won(lim)}`:'실적 미달 (혜택 없음)'}</div></div>
-      <input type="number" inputmode="numeric" value="${Math.round(used)}" onchange="setUsed('${c.id}','${pid}',this.value)">
+      ${P.ro?`<div style="text-align:right;font-weight:600">${Math.round(used).toLocaleString('ko-KR')}P</div>`:`<input type="number" inputmode="numeric" value="${Math.round(used)}" onchange="setUsed('${c.id}','${pid}',this.value)">`}
       ${lim>0&&lim!==Infinity?`<div class="full bar"><i style="width:${pct}%"></i></div>`:''}`}).join('');
     const cks=[...new Set(RULES[c.id].filter(r=>r.mm).map(r=>r.ck))].map(ck=>
       `<div>${CKNAME[ck]} 할인 횟수 (이번달)</div><input type="number" value="${cnt(c.id,ck,'m',today())}" onchange="setCnt('${c.id}','${ck}',this.value)">`).join('');
@@ -800,10 +913,13 @@ function vCards(){
       <label>이번달 교통카드 이용액 (앱 기록 외, 다음달 보정용)</label><input type="number" inputmode="numeric" value="${cs.trNow||''}" placeholder="0" onchange="S.cards['${c.id}'].trNow=+this.value||0;save();render()">`:''}
       ${c.excl?`<label>전월 대중교통·택시·하이패스 이용액 — 실적에서 자동 제외</label><input type="number" inputmode="numeric" value="${cs.ex1||''}" placeholder="0" onchange="S.cards['${c.id}'].ex1=+this.value||0;save();render()">
       <label>이번달 대중교통·택시·하이패스 이용액 (앱 기록 외, 다음달 제외용)</label><input type="number" inputmode="numeric" value="${cs.exNow||''}" placeholder="0" onchange="S.cards['${c.id}'].exNow=+this.value||0;save();render()">`:''}
-      <label class="chk"><input type="checkbox" ${cs.newIssue?'checked':''} onchange="S.cards['${c.id}'].newIssue=this.checked;save();render()">신규 발급 (등록월+1개월까지 30만원 구간 혜택 보장)</label>
+      ${c.noNew?`<label class="chk"><input type="checkbox" ${cs.intl!==false?'checked':''} onchange="S.cards['${c.id}'].intl=this.checked;save();render()">해외겸용 카드 (국내전용 카드면 해제 — 해외 결제는 불가로 안내)</label>
+      <div class="mut">신규 발급 보장 조항은 안내장 표현이 모호해 적용하지 않았어요. 적용 기준: 전월 실적 20만원↑ 스마트적립 · 30만원↑ 이체수수료 면제 · 50만원↑ 공항 라운지.</div>`
+      :`<label class="chk"><input type="checkbox" ${cs.newIssue?'checked':''} onchange="S.cards['${c.id}'].newIssue=this.checked;save();render()">신규 발급 (등록월+1개월까지 30만원 구간 혜택 보장)</label>`}
       <div class="mut" style="margin-top:8px">적용 중인 실적: <b>${won(prev)}</b> · 이번달 누적 사용: <b>${won(ms)}</b>${nx?` · 다음달 다음 구간까지 ${won(nx-ms)}`:' · 최상위 구간 달성'}</div>
       <details><summary>이번달 사용한 할인 (앱 밖에서 받은 할인은 여기서 수정)</summary>
         <div class="pool">${pools}${cks}
+          ${c.nh?(()=>{const t=nhAreaTotals(c.id,today());return`<div class="full mut" style="margin-top:6px">이번달 영역별 이용금액 (앱 밖에서 쓴 금액만 입력 · 스마트적립 1·2위 계산용)</div>`+[1,2,3,4,5,6].map(i=>`<div>${NH_AREA_NAME[i]}<div class="mut">현재 합계 ${won(t[i])} (기록 포함)</div></div><input type="number" inputmode="numeric" value="${(cs.area&&cs.area[i])||0}" onchange="S.cards['${c.id}'].area[${i}]=+this.value||0;save();render()">`).join('')})():''}
           <div>이번달 직접입력 실적 (앱 기록 외)</div><input type="number" value="${cs.spend||0}" onchange="S.cards['${c.id}'].spend=+this.value||0;save();render()">
         </div></details></div>`}).join('');
 }
@@ -830,7 +946,7 @@ function vData(){
 function resetMonth(){
   if(!confirm(`${S.monthKey} 결제 기록과 이번달 사용량(할인 사용액·횟수·직접입력 실적)을 초기화할까요?\n전월 실적 설정은 유지됩니다.`))return;
   S.log=S.log.filter(l=>!l.date.startsWith(S.monthKey));
-  for(const c of CARDS){const cs=S.cards[c.id];cs.spend=0;cs.trNow=0;cs.exNow=0;cs.base={}}
+  for(const c of CARDS){const cs=S.cards[c.id];cs.spend=0;cs.trNow=0;cs.exNow=0;cs.base={};cs.area={}}
   save();render();toast('이번달 기록·사용량을 초기화했습니다');
 }
 function clearLog(){
@@ -839,7 +955,8 @@ function clearLog(){
 }
 function resetAll(){
   if(!confirm('전월 실적, 결제 기록 등 모든 데이터를 지우고 처음 상태로 되돌릴까요?\n로그인 상태면 클라우드 데이터도 함께 초기화됩니다.'))return;
-  S=blank();save();render();toast('모든 데이터를 초기화했습니다');
+  const en=S.enabled,sd=S.setupDone;S=blank();S.enabled=en;S.setupDone=sd;   // 카드 선택은 유지
+  save();render();toast('모든 데이터를 초기화했습니다 (카드 선택은 유지)');
 }
 function setUsed(cid,pid,v){const P=POOLS[cid][pid],k=per(P,today());
   const lg=logSum(cid,l=>l.pool===pid&&per(P,l.date)===k);
@@ -851,9 +968,9 @@ function imp(){const t=prompt('백업 JSON을 붙여넣으세요');if(!t)return;
 
 function vLog(){
   const m=S.log.filter(l=>l.date.startsWith(curMonth())),sum=m.reduce((a,l)=>a+l.disc,0);
-  return`<h1>결제 기록</h1><div class="hint">이번달 할인 합계 <b>${won(sum)}</b> · ${m.length}건</div><div class="card">`+
+  return`<h1>결제 기록</h1><div class="hint">이번달 할인·적립 합계 <b>${won(sum)}</b> · ${m.length}건</div><div class="card">`+
    (S.log.length?S.log.slice(0,100).map(l=>`<div class="log"><div><b>${CARDS.find(c=>c.id===l.card).name}</b> · ${CATNAME[l.cat]}<div class="mut">${l.date} · ${won(l.amount)}</div></div>
-   <div style="text-align:right;white-space:nowrap"><span style="color:var(--ok);font-weight:700">-${won(l.disc)}</span><br><button class="sm ghost" onclick="delLog('${l.id}')">삭제</button></div></div>`).join(''):'<div class="mut">아직 기록이 없어요</div>')+`</div>`;
+   <div style="text-align:right;white-space:nowrap"><span style="color:var(--ok);font-weight:700">${gainTxt(CARDS.find(c=>c.id===l.card),l.disc)}</span><br><button class="sm ghost" onclick="delLog('${l.id}')">삭제</button></div></div>`).join(''):'<div class="mut">아직 기록이 없어요</div>')+`</div>`;
 }
 function delLog(id){S.log=S.log.filter(l=>String(l.id)!==String(id));save();render()}
 render();
