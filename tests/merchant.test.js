@@ -19,7 +19,7 @@ function boot({user=null,doc,docErr,ggDoc,ggErr,fetchImpl,geo,noFirebase=false}=
     fetch:async(u,o)=>{fetches.push({url:String(u),opt:o});return fetchImpl(String(u),o)},AbortController,URLSearchParams,setTimeout,clearTimeout,Promise,JSON,Math,Date,Number,Object,Array,String,isFinite,window:{addEventListener:(e,f)=>{if(e==='keydown')keyHandlers.push(f)}}};
   if(fb)ctx.firebase=fb;
   vm.createContext(ctx);
-  vm.runInContext(SRC+';globalThis.M={diagKey,G,SIGUN,GG_URL,GG_KEY_RE,ggBuildUrl,ggParse,ggNorm,ggTypeLabel,ggOpen,ggStatusLabel,ggView,ggSearch,ggMore,ggSet,ggToggle,ggOpenStore,ggCloseStore,ggPopup,ggClean,guessSigun,distKm,fmtKm,loadGgKey,openStore,closeStore,storePopup,mapQuery,S,render,esc,guessSido,buildUrl,latestPath,normRow,search,locate,onSearch,setQ,loadKey,login,resolvePath,SIDO,SIDO_PTS,KEY_RE,PER_PAGE,authBox,resultsBox,fmtDate}',ctx);
+  vm.runInContext(SRC+';globalThis.M={setView,locBox,keyHint,onnuriBox,diagKey,G,SIGUN,GG_URL,GG_KEY_RE,ggBuildUrl,ggParse,ggNorm,ggTypeLabel,ggOpen,ggStatusLabel,ggView,ggSearch,ggMore,ggSet,ggToggle,ggOpenStore,ggCloseStore,ggPopup,ggClean,guessSigun,distKm,fmtKm,loadGgKey,openStore,closeStore,storePopup,mapQuery,S,render,esc,guessSido,buildUrl,latestPath,normRow,search,locate,onSearch,setQ,loadKey,login,resolvePath,SIDO,SIDO_PTS,KEY_RE,PER_PAGE,authBox,resultsBox,fmtDate}',ctx);
   const html=()=>els.app.innerHTML;
   const signIn=async()=>{authCbs.forEach(c=>c(user));await sleep(20)};
   return{M:ctx.M,ctx,els,logs,fetches,html,keyHandlers,signIn,text:()=>html().replace(/<[^>]+>/g,' ').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/\s+/g,' ')};   // 화면에 보이는 글자(HTML 이스케이프는 풀어서 비교)
@@ -346,9 +346,27 @@ const api=(rows,total)=>async(u)=>u.includes('infuser.odcloud.kr')?jres(200,SWG)
     b=await mkl(37.5665,126.9780);ok('서울에서는 경기 시·군을 자동 선택하지 않음(성남 등으로 오판 방지)',b.M.S.q.sido==='서울'&&b.M.G.q.sigun===''&&b.M.G.pos!=null);
     b=await mkl(35.1587,129.1604);ok('부산에서도 경기 시·군 선택 안 함',b.M.S.q.sido==='부산'&&b.M.G.q.sigun==='');
     b=await mkl(35.68,139.69);ok('해외에서는 시·도도 시·군도 선택하지 않음',b.M.S.q.sido===''&&b.M.G.q.sigun==='')}
+  // ── 화면 구조(계층): 제목 하나 · 탭 · 같은 구조의 두 영역 ──
+  { const b=boot({user:{uid:'u1'},doc:{onnuriKey:KEY},ggDoc:{ggKey:'4b5b7651f0004801ab7a37ab6440907e'},fetchImpl:api([row()],1),geo:{getCurrentPosition:(s)=>s({coords:{latitude:37.3947,longitude:127.1112}})}});await b.signIn();
+    const h=b.html();
+    ok('페이지 이름: "지역화폐 가맹점 심층 분석" (제목 태그 h1은 하나)',/<title>지역화폐 가맹점 심층 분석 · 카드픽<\/title>/.test(HTML)&&/<h1 class="ttl">지역화폐 가맹점 심층 분석<\/h1>/.test(HTML)&&(HTML.match(/<h1\b/g)||[]).length===1&&!/<h1>온누리 가맹점 조회<\/h1>/.test(h));
+    ok('본문에 큰 제목(h1)이 없고 영역 제목은 h2(온누리상품권 / 경기지역화폐) 두 개 — 같은 계층',!/<h1/.test(h)&&(h.match(/<h2>/g)||[]).length===2&&/<h2>온누리상품권<\/h2>/.test(h)&&/<h2>경기지역화폐<\/h2>/.test(h));
+    ok('탭: 온누리상품권 · 경기지역화폐 (role=tablist/tab, aria-selected)',/role="tablist"/.test(h)&&/id="tab_onnuri" aria-selected="true"/.test(h)&&/id="tab_gg" aria-selected="false"/.test(h));
+    ok('처음엔 온누리 영역만 보이고 경기 영역은 숨김(hidden)',/id="pnl_onnuri"[^>]*>/.test(h)&&!/id="pnl_onnuri"[^>]*hidden/.test(h)&&/id="pnl_gg"[^>]*hidden/.test(h));
+    b.M.setView('gg');const g=b.html();
+    ok('탭 전환: 경기가 보이고 온누리가 숨겨짐, 선택 표시도 바뀜',!/id="pnl_gg"[^>]*hidden/.test(g)&&/id="pnl_onnuri"[^>]*hidden/.test(g)&&/id="tab_gg" aria-selected="true"/.test(g)&&/id="tab_onnuri" aria-selected="false"/.test(g)&&b.M.S.view==='gg');
+    b.M.setView('onnuri');b.M.setView('아무거나');ok('잘못된 탭 값은 온누리로 안전하게',b.M.S.view==='onnuri');
+    ok('두 영역이 같은 구조: 각 영역 안에 공식 사이트 링크가 있음(맨 아래 따로 떨어진 링크 없음)',(()=>{const on=h.slice(h.indexOf('id="pnl_onnuri"'),h.indexOf('id="pnl_gg"')),gg=h.slice(h.indexOf('id="pnl_gg"'));return /온누리 공식 사이트 ↗/.test(on)&&/경기지역화폐 공식 매장 검색 ↗/.test(gg)&&!/온누리 공식 사이트 ↗/.test(gg)})());
+    const o=boot({user:null,fetchImpl:api([])});await o.signIn();const oh=o.html();
+    ok('로그아웃 상태: 로그인 카드 1개, 탭 위에 위치, 두 영역 입력칸은 모두 비활성',(oh.match(/로그인이 필요해요/g)||[]).length===1&&oh.indexOf('로그인이 필요해요')<oh.indexOf('role="tablist"')&&!/id="g_name"/.test(oh)&&/id="q_name"[^>]*disabled/.test(oh));
+    // 위치 안내는 현재 보이는 영역에서 보임(탭과 무관)
+    b.M.locate();const lh=b.html();
+    ok('현재 위치 안내가 온누리·경기 두 영역 모두에 표시(어느 탭에서 눌러도 보임)',(lh.match(/현재 위치 기준 시·도를 경기\(으\)로 추정했어요/g)||[]).length===2);
+    b.M.setQ('name','');await b.M.search(false);
+    ok('온누리 검증 메시지(S.msg)와 위치 안내(S.locMsg)는 분리: 검색어 안내가 떠도 위치 안내는 그대로',/가게명이나 시장·상점가명을 입력해 주세요/.test(b.text())&&b.M.S.locMsg.includes('추정했어요')&&b.M.S.msg.includes('입력해 주세요')&&!b.M.S.locMsg.includes('입력해 주세요'))}
   // ── 화면 구성 ──
   { const b=boot({user:{uid:'u1'},doc:{onnuriKey:KEY},fetchImpl:api([])});await b.signIn();
-    ok('경기지역화폐 영역: 이제 "준비 중"이 아니라 실제 조회 박스(공식 매장 검색 링크 포함, 새 창 + noopener)',!/준비 중/.test(b.text())&&/경기지역화폐 가맹점 조회/.test(b.text())&&/search\.konacard\.co\.kr\/payable-merchants/.test(b.html())&&/target="_blank" rel="noopener noreferrer"/.test(b.html()));
+    ok('경기지역화폐 영역: 이제 "준비 중"이 아니라 실제 조회 박스(공식 매장 검색 링크 포함, 새 창 + noopener)',!/준비 중/.test(b.text())&&/<h2>경기지역화폐<\/h2>/.test(b.html())&&/경기지역화폐 공식 매장 검색/.test(b.text())&&/search\.konacard\.co\.kr\/payable-merchants/.test(b.html())&&/target="_blank" rel="noopener noreferrer"/.test(b.html()));
     ok('온누리 공식 사이트 링크',b.html().includes('https://www.onnuri.gift/'));
     ok('앱으로 돌아가는 링크(index.html)',/<a class="back" href="index\.html">/.test(HTML));
     ok('시·도 선택 상자: 전국 + 16개, "전남·광주" 표기',(b.html().match(/<option value="/g)||[]).length===17&&/전남·광주/.test(b.html()));
