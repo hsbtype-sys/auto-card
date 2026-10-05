@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>가맹점 심층 분석 · 카드픽</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2563eb">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--tx:#111827;--mut:#6b7280;--line:#e5e7eb;--pri:#2563eb;--ok:#059669;--warn:#d97706;--bad:#dc2626;--soft:#eef2ff}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1014;--card:#171a21;--tx:#f3f4f6;--mut:#9ca3af;--line:#282d38;--pri:#60a5fa;--ok:#34d399;--warn:#fbbf24;--bad:#f87171;--soft:#1e2433}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+.top{position:sticky;top:0;z-index:20;background:var(--card);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top)}
+.top .in{max-width:560px;margin:0 auto;height:52px;padding:0 16px;display:flex;align-items:center;gap:12px}
+.back{color:var(--pri);font-weight:700;text-decoration:none;font-size:14px;white-space:nowrap}
+.ttl{font-size:17px;font-weight:800;letter-spacing:-.3px}
+main{max-width:560px;margin:0 auto;padding:16px 16px 40px}
+h1{font-size:19px;margin:4px 0 12px}h2{font-size:15px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:12px;color:var(--mut);margin:10px 0 3px}
+input,select,button{font:inherit;color:inherit}
+input[type=text],select{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+button,.btn{border:0;border-radius:10px;padding:10px 14px;background:var(--pri);color:#fff;cursor:pointer;font-weight:600;text-decoration:none;display:inline-block}
+button.ghost,.btn.ghost{background:transparent;color:var(--pri);border:1px solid var(--line)}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>.grow{flex:1;min-width:0}
+.mut{color:var(--mut);font-size:12px}
+.hint{background:var(--soft);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+.hint.warn{border-left:4px solid var(--warn)}.hint.bad{border-left:4px solid var(--bad)}
+.store{padding:12px 0;border-top:1px solid var(--line)}.store:first-child{border-top:0}
+.store b{font-size:15px}.store .sub{font-size:13px;color:var(--mut)}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;margin:4px 6px 0 0;background:var(--soft);color:var(--pri)}
+.chip.off{background:transparent;color:var(--mut);border:1px solid var(--line);font-weight:500}
+.cnt{font-size:13px;margin:0 2px 8px}
+</style>
+</head>
+<body>
+<header class="top"><div class="in"><a class="back" href="index.html">← 카드픽</a><div class="ttl">가맹점 심층 분석</div></div></header>
+<main id="app"></main>
+<script>
+// ───────────── 설정 (모두 공개 가능한 값. 온누리 API 키는 코드에 없고 로그인 후 Firestore에서 읽어옵니다) ─────────────
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCJoPWU2QKzyhZTJcIsWRYVJTPYFshOms0",
+  authDomain: "auto-card-b7741.firebaseapp.com",
+  projectId: "auto-card-b7741",
+  storageBucket: "auto-card-b7741.firebasestorage.app",
+  messagingSenderId: "561120311017",
+  appId: "1:561120311017:web:a3da5d3e497ebfaf1de278"
+};
+const ODCLOUD='https://api.odcloud.kr/api';
+const SWAGGER='https://infuser.odcloud.kr/oas/docs?namespace=3060079/v1';
+const FALLBACK_PATH='/3060079/v1/uddi:2fec9daf-aa5a-4139-9109-e5541b4a6bae';   // 2026-07-31 기준 (연 1회 새 버전이 올라오면 SWAGGER에서 최신을 자동 선택)
+const KEY_RE=/^[A-Za-z0-9+/=%_-]{20,200}$/;
+const PER_PAGE=20;
+// 데이터의 '소재지' 값(시·도). 통합된 전남·광주는 데이터에서 "전남광주" 하나로 표기됨
+const SIDO=[['서울','서울'],['경기','경기'],['인천','인천'],['부산','부산'],['대구','대구'],['대전','대전'],['울산','울산'],['세종','세종'],['강원','강원'],['충북','충북'],['충남','충남'],['전북','전북'],['전남광주','전남·광주'],['경북','경북'],['경남','경남'],['제주','제주']];
+const SIDO_PTS={
+ '서울':[[37.5665,126.978],[37.4979,127.0276],[37.6542,127.0568],[37.5509,126.8495],[37.4784,126.9516],[37.54,127.07]],
+ '경기':[[37.2636,127.0286],[37.42,127.1265],[37.6584,126.832],[37.2411,127.1776],[37.5034,126.766],[37.3219,126.8309],[37.3943,126.9568],[37.636,127.2165],[37.1996,126.8312],[36.9921,127.1129],[37.7381,127.0337],[37.7599,126.78],[37.38,126.803],[37.6153,126.7156],[37.4786,126.8645],[37.4295,127.255],[37.5393,127.2148],[37.272,127.435],[37.4917,127.4877],[37.8315,127.5095],[37.8949,127.2003],[38.0966,127.0749],[37.008,127.2797],[37.2983,127.6374],[37.1499,127.0775],[37.3617,126.9352],[37.5943,127.1296],[37.9036,127.0607],[37.4292,126.9876],[37.3449,126.9683]],
+ '인천':[[37.4563,126.7052],[37.382,126.657],[37.507,126.7219],[37.7467,126.4878],[37.4602,126.4407]],
+ '강원':[[37.8813,127.7298],[37.3422,127.9202],[37.7519,128.8761],[38.207,128.5918],[37.5247,129.1143],[37.45,129.165],[37.1641,128.9856],[37.697,127.8888],[37.4917,127.985],[37.1837,128.4617],[37.3705,128.39],[37.3807,128.6608],[38.1467,127.3133],[38.1063,127.7082],[38.11,127.9897],[38.0695,128.1707],[38.3806,128.4678],[38.0754,128.619]],
+ '충북':[[36.6424,127.489],[36.62,127.33],[36.635,127.43],[36.72,127.43],[36.991,127.926],[37.1325,128.1909],[36.4894,127.7295],[36.3064,127.5714],[36.175,127.7834],[36.8553,127.4357],[36.8153,127.7867],[36.94,127.6906],[36.9845,128.3655],[36.785,127.5814]],
+ '충남':[[36.8151,127.1139],[36.7898,127.0018],[36.4466,127.119],[36.3334,126.6129],[36.7848,126.4503],[36.1872,127.0987],[36.8898,126.6296],[36.6011,126.6608],[36.6826,126.8486],[36.7456,126.2977],[36.2756,126.9097],[36.0804,126.6914],[36.1089,127.4881],[36.2744,127.2487],[36.4592,126.8022]],
+ '대전':[[36.3504,127.3845],[36.3622,127.3563],[36.3326,127.4342]],
+ '세종':[[36.48,127.289],[36.504,127.265]],
+ '전북':[[35.8242,127.148],[35.9676,126.7369],[35.9483,126.9577],[35.5699,126.8559],[35.4164,127.3904],[35.8036,126.8808],[35.9047,127.1618],[35.7917,127.4249],[36.007,127.6608],[35.6475,127.5213],[35.6174,127.289],[35.3744,127.1375],[35.4358,126.7019],[35.7317,126.7336]],
+ '전남광주':[[35.1595,126.8526],[34.8118,126.3922],[34.7604,127.6622],[34.9506,127.4872],[35.016,126.7107],[34.9407,127.6959],[35.3213,126.9882],[35.282,127.292],[35.2025,127.4629],[34.6112,127.285],[34.7714,127.08],[35.0645,126.9866],[34.6817,126.9069],[34.642,126.7672],[34.5736,126.599],[34.8001,126.6968],[34.9904,126.4817],[35.0658,126.5168],[35.2772,126.512],[35.3018,126.7849],[34.311,126.755],[34.4868,126.2634],[34.8268,126.1067]],
+ '경북':[[36.019,129.3435],[35.8562,129.2247],[36.1398,128.1136],[36.5684,128.7294],[36.1195,128.3446],[36.8057,128.624],[35.9733,128.9386],[36.4109,128.159],[36.5866,128.1867],[35.8251,128.7414],[36.3527,128.697],[36.436,129.0572],[36.6667,129.1124],[36.415,129.365],[35.6472,128.734],[35.7263,128.2626],[35.919,128.283],[35.9955,128.4017],[36.6577,128.4517],[36.8931,128.7325],[36.993,129.4006],[37.4845,130.9057]],
+ '대구':[[35.8714,128.6014],[35.7746,128.4314],[35.8581,128.6307]],
+ '울산':[[35.5384,129.3114],[35.56,129.36]],
+ '부산':[[35.1796,129.0756],[35.1631,129.1639],[35.1527,128.991],[35.2445,129.2222],[35.1,129.03]],
+ '경남':[[35.228,128.6811],[35.18,128.1076],[34.8544,128.4331],[35.0037,128.0642],[35.2285,128.8894],[35.5038,128.7466],[34.8806,128.6211],[35.335,129.0373],[35.3222,128.2617],[35.2725,128.4064],[35.5445,128.4923],[34.973,128.3228],[34.8375,127.8924],[35.0674,127.7512],[35.4153,127.8736],[35.5205,127.7253],[35.6868,127.9095],[35.5666,128.1658]],
+ '제주':[[33.4996,126.5312],[33.2541,126.5601],[33.38,126.55]]};
+
+// ───────────── 도우미 ─────────────
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const won=n=>Number(n).toLocaleString('ko-KR');
+// 현재 위치 → 시·도 추정: 주요 시군 좌표 중 가장 가까운 지점의 시·도. 멀리(150km↑) 떨어져 있으면 null (해외 등). 서버·외부 서비스를 쓰지 않음
+function guessSido(lat,lon){
+  if(typeof lat!=='number'||typeof lon!=='number'||!isFinite(lat)||!isFinite(lon))return null;
+  let best=null,bd=Infinity;
+  for(const [sido,list] of Object.entries(SIDO_PTS))for(const [a,b] of list){
+    const dy=(lat-a)*111.2,dx=(lon-b)*111.2*Math.cos(lat*Math.PI/180),d=Math.hypot(dx,dy);   // km
+    if(d<bd){bd=d;best=sido}}
+  return bd<=150?best:null;
+}
+// 검색 주소 만들기. 키는 주소에 넣지 않고 Authorization 헤더로 보냄
+function buildUrl(path,{name,sido,market,page}){
+  const p=new URLSearchParams({page:String(page||1),perPage:String(PER_PAGE),returnType:'JSON'});
+  if(name)p.set('cond[가맹점명::LIKE]',name);
+  if(sido)p.set('cond[소재지::EQ]',sido);
+  if(market)p.set('cond[소속 시장명(또는 상점가)::LIKE]',market);
+  return ODCLOUD+path+'?'+p.toString();
+}
+// swagger에서 가장 최근 날짜(…_YYYYMMDD) 버전의 경로 선택
+function latestPath(doc){
+  let best=null;
+  for(const [path,v] of Object.entries((doc&&doc.paths)||{})){
+    const m=/_(\d{8})$/.exec((v&&v.get&&v.get.summary)||'');if(!m)continue;
+    if(!best||m[1]>best.date)best={date:m[1],path};
+  }
+  return best;
+}
+function normRow(r){
+  r=r||{};
+  return{name:r['가맹점명'],market:r['소속 시장명(또는 상점가)'],sido:r['소재지'],item:r['취급품목'],paper:r['지류형 가맹 여부']==='Y',digital:r['디지털형 가맹 여부']==='Y',year:r['가맹 등록년도']};
+}
+const fmtDate=d=>d&&d.length===8?`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6)}`:'';
+async function fetchT(url,opt,ms){
+  const ac=new AbortController(),t=setTimeout(()=>ac.abort(),ms);
+  try{return await fetch(url,{...opt,signal:ac.signal})}finally{clearTimeout(t)}
+}
+
+// ───────────── 상태 ─────────────
+// auth: init(확인 중) | out(로그인 필요) | in | nofirebase(로그인 기능 불러오기 실패)
+// keyStatus: none | loading | ok | missing(문서 없음) | invalid(형식 오류) | denied(권한 없음) | error
+const S={auth:'init',user:null,key:'',keyStatus:'none',path:'',dataDate:'',q:{name:'',sido:'',market:''},page:0,total:0,rows:[],msg:'',err:'',busy:false,loc:''};
+let fbAuth=null,fbDb=null;
+
+// ───────────── 로그인 · 키 읽기 ─────────────
+function initFirebase(){
+  if(typeof firebase==='undefined'){S.auth='nofirebase';render();return}
+  try{
+    firebase.initializeApp(FIREBASE_CONFIG);fbAuth=firebase.auth();fbDb=firebase.firestore();
+    fbAuth.getRedirectResult().catch(()=>{});
+    fbAuth.onAuthStateChanged(u=>{S.user=u||null;if(u){S.auth='in';loadKey()}else{S.auth='out';S.key='';S.keyStatus='none';render()}});
+  }catch(e){S.auth='nofirebase';render()}
+}
+async function loadKey(){
+  S.keyStatus='loading';render();
+  try{
+    const snap=await fbDb.doc('config/odcloud').get(),k=snap.exists?snap.data().onnuriKey:null;
+    if(!snap.exists)S.keyStatus='missing';
+    else if(typeof k==='string'&&KEY_RE.test(k.trim())){S.key=k.trim();S.keyStatus='ok'}
+    else S.keyStatus='invalid';
+  }catch(e){S.keyStatus=e&&e.code==='permission-denied'?'denied':'error'}   // 키 값은 어떤 메시지·로그에도 쓰지 않음
+  render();
+}
+async function login(){
+  if(!fbAuth)return;
+  const pr=new firebase.auth.GoogleAuthProvider();
+  try{await fbAuth.signInWithPopup(pr)}
+  catch(e){
+    if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment'].includes(e.code))fbAuth.signInWithRedirect(pr);
+    else if(!['auth/popup-closed-by-user','auth/cancelled-popup-request'].includes(e.code)){S.err='로그인에 실패했어요 ('+(e.code||'오류')+')';render()}
+  }
+}
+
+// ───────────── 현재 위치 ─────────────
+function locate(){
+  if(!navigator.geolocation){S.msg='이 브라우저는 위치 기능을 지원하지 않아요. 시·도를 직접 선택해 주세요.';render();return}
+  S.msg='현재 위치를 확인하는 중…';render();
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const s=guessSido(pos.coords.latitude,pos.coords.longitude);
+    if(s){S.q.sido=s;S.loc=s;S.msg='현재 위치 기준 시·도를 '+(SIDO.find(x=>x[0]===s)||[0,s])[1]+'(으)로 추정했어요. 틀리면 직접 바꿔 주세요. (위치는 기기 안에서만 쓰이고 어디로도 보내지 않아요)'}
+    else S.msg='현재 위치에서 국내 시·도를 찾지 못했어요. 직접 선택해 주세요.';
+    render();
+  },err=>{
+    S.msg=err&&err.code===1?'위치 권한이 거부됐어요. 브라우저 설정에서 허용하거나 시·도를 직접 선택해 주세요.':err&&err.code===3?'위치 확인 시간이 초과됐어요. 다시 시도하거나 직접 선택해 주세요.':'위치를 확인할 수 없어요. 직접 선택해 주세요.';
+    render();
+  },{enableHighAccuracy:false,timeout:10000,maximumAge:300000});
+}
+
+// ───────────── 조회 ─────────────
+async function resolvePath(){
+  if(S.path)return;
+  try{
+    const r=await fetchT(SWAGGER,{},6000),best=r.ok?latestPath(await r.json()):null;
+    if(best){S.path=best.path;S.dataDate=best.date;return}
+  }catch(e){}
+  S.path=FALLBACK_PATH;S.dataDate='20260731';
+}
+async function search(append){
+  const name=S.q.name.trim(),market=S.q.market.trim();
+  S.err='';S.msg='';
+  if(S.keyStatus!=='ok'){S.err='먼저 로그인해 주세요.';render();return}
+  if(!name&&!market){S.msg='가게명이나 시장·상점가명을 입력해 주세요. (시·도만으로는 결과가 너무 많아요)';render();return}
+  if(name.length>30||market.length>30){S.msg='검색어는 30자 이내로 입력해 주세요.';render();return}
+  if(S.busy)return;
+  S.busy=true;render();
+  try{
+    await resolvePath();
+    const page=append?S.page+1:1;
+    const res=await fetchT(buildUrl(S.path,{name,sido:S.q.sido,market,page}),{headers:{Authorization:'Infuser '+S.key}},15000);
+    if(res.status===401||res.status===403)throw new Error('온누리 API 키가 유효하지 않아요. 관리자에게 알려 주세요.');
+    if(res.status===429)throw new Error('오늘 조회 가능한 횟수를 넘었어요. 내일 다시 시도해 주세요.');
+    if(!res.ok)throw new Error('조회 중 오류가 났어요 (코드 '+res.status+'). 잠시 후 다시 시도해 주세요.');
+    const d=await res.json();
+    if(d&&typeof d.code==='number'&&d.code<0)throw new Error('조회 중 오류가 났어요 (코드 '+d.code+').');
+    const rows=Array.isArray(d.data)?d.data.map(normRow):[];
+    S.rows=append?S.rows.concat(rows):rows;S.page=page;S.total=Number(d.matchCount)||0;
+  }catch(e){
+    S.err=e&&e.name==='AbortError'?'응답이 늦어요. 잠시 후 다시 시도해 주세요.':(e&&e.message&&!/fetch|network|Failed/i.test(e.message)?e.message:'네트워크 오류로 조회하지 못했어요.');
+    if(!append){S.rows=[];S.total=0;S.page=0}
+  }finally{S.busy=false;render()}
+}
+function onSearch(ev){if(ev&&ev.preventDefault)ev.preventDefault();search(false);return false}
+function setQ(k,v){S.q[k]=v}
+
+// ───────────── 화면 ─────────────
+function authBox(){
+  switch(S.auth){
+    case'init':return`<div class="hint">로그인 상태를 확인하는 중…</div>`;
+    case'nofirebase':return`<div class="hint bad"><b>로그인 기능을 불러오지 못했어요.</b><br>인터넷 연결을 확인하고 다시 열어 주세요.</div>`;
+    case'out':return`<div class="card"><h2>로그인이 필요해요</h2><div class="mut" style="margin-bottom:10px">온누리 조회에 쓰는 공용 키는 로그인한 사용자에게만 제공돼요. 카드픽에서 쓰는 Google 계정으로 로그인해 주세요.</div><button onclick="login()">Google로 로그인</button>${S.err?`<div class="mut" style="color:var(--bad);margin-top:8px">${esc(S.err)}</div>`:''}</div>`;
+  }
+  const m={loading:['','키를 불러오는 중…'],
+    missing:['warn','조회 키가 아직 등록되지 않았어요. 관리자가 Firebase에 <b>config / odcloud</b> 문서를 만들어야 해요.'],
+    invalid:['bad','등록된 조회 키의 형식이 올바르지 않아요. 관리자에게 알려 주세요.'],
+    denied:['bad','이 계정은 조회 키를 읽을 권한이 없어요. (관리자가 접근을 허용해야 해요)'],
+    error:['bad','조회 키를 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.']}[S.keyStatus];
+  return m?`<div class="hint ${m[0]}">${m[1]}</div>`:'';
+}
+function resultsBox(){
+  const q=S.q;let h='';
+  if(S.err)h+=`<div class="hint bad">${esc(S.err)}</div>`;
+  if(S.msg)h+=`<div class="hint">${esc(S.msg)}</div>`;
+  if(S.page>0&&!S.err){
+    if(!S.rows.length){
+      h+=`<div class="card"><b>조회된 가맹점이 없어요</b><div class="mut" style="margin-top:4px">온누리상품권 가맹점이 아니거나, 등록된 이름이 달라서일 수 있어요. 간판과 다르게 등록된 경우도 있으니 <b>가게명의 일부만</b> 넣거나 시장·상점가명으로 다시 찾아 보세요. 공식 조회 사이트에서 한 번 더 확인할 수도 있어요.</div></div>`;
+    }else{
+      h+=`<div class="cnt">총 <b>${won(S.total)}곳</b> 중 ${won(S.rows.length)}곳 표시${S.dataDate?` <span class="mut">· 데이터 기준 ${esc(fmtDate(S.dataDate))}</span>`:''}</div>`;
+      if(S.total>200)h+=`<div class="hint warn">같은 이름의 가게가 많아요. <b>시·도</b>를 고르거나 <b>시장·상점가명</b>을 함께 넣으면 더 정확해요.</div>`;
+      h+=`<div class="card">`+S.rows.map(r=>`<div class="store"><b>${esc(r.name||'(이름 없음)')}</b>
+        <div class="sub">${esc(r.market||'소속 시장·상점가 정보 없음')} · ${esc((SIDO.find(x=>x[0]===r.sido)||[0,r.sido||'지역 정보 없음'])[1])}</div>
+        <div class="sub">${r.item?esc(r.item):'취급품목 정보 없음'}</div>
+        <span class="chip ${r.paper?'':'off'}">지류형 ${r.paper?'가능':'정보 없음'}</span><span class="chip ${r.digital?'':'off'}">디지털 ${r.digital?'가능':'정보 없음'}</span>${r.year?`<span class="chip off">${esc(r.year)}년 등록</span>`:''}</div>`).join('')+`</div>`;
+      if(S.rows.length<S.total)h+=`<button class="ghost" style="width:100%;margin-bottom:12px" onclick="search(true)" ${S.busy?'disabled':''}>더 보기 (${won(S.total-S.rows.length)}곳 남음)</button>`;
+      h+=`<div class="mut" style="margin:0 2px 12px">※ 이 목록에는 번지 주소가 없어(시·도와 시장·상점가까지만 제공) 같은 이름의 다른 가게와 헷갈릴 수 있어요. 실제 가맹 여부는 가게의 온누리 스티커나 공식 조회로 확인하세요.</div>`;
+    }
+  }
+  return h;
+}
+function render(){
+  const ok=S.auth==='in'&&S.keyStatus==='ok';
+  document.getElementById('app').innerHTML=`<h1>온누리 가맹점 조회</h1>
+  <div class="hint">가게명이나 시장·상점가명으로 <b>온누리상품권 가맹점</b>인지 찾아봐요. 결과는 공공데이터(소상공인시장진흥공단) 기준이며 폐업·변경은 반영이 늦을 수 있어요.</div>
+  ${authBox()}
+  <form class="card" onsubmit="return onSearch(event)" ${ok?'':'style="opacity:.55"'}>
+    <label>가게명</label><input id="q_name" type="text" maxlength="30" autocomplete="off" placeholder="예: 약국, 정육점, 이름 일부" value="${esc(S.q.name)}" oninput="setQ('name',this.value)" ${ok?'':'disabled'}>
+    <label>시·도</label>
+    <div class="row"><select id="q_sido" class="grow" onchange="setQ('sido',this.value)" ${ok?'':'disabled'}><option value="">전국</option>${SIDO.map(([v,l])=>`<option value="${esc(v)}" ${S.q.sido===v?'selected':''}>${esc(l)}</option>`).join('')}</select>
+      <button type="button" class="ghost" onclick="locate()" ${ok?'':'disabled'}>📍 현재 위치</button></div>
+    <label>시장·상점가명 (선택)</label><input id="q_market" type="text" maxlength="30" autocomplete="off" placeholder="예: 남문시장, 골목형상점가" value="${esc(S.q.market)}" oninput="setQ('market',this.value)" ${ok?'':'disabled'}>
+    <div style="margin-top:12px"><button type="submit" style="width:100%" ${ok&&!S.busy?'':'disabled'}>${S.busy?'조회 중…':'조회하기'}</button></div>
+  </form>
+  ${resultsBox()}
+  <div class="card"><h2>경기지역화폐</h2>
+    <div class="mut" style="margin-bottom:8px">앱 안 조회는 <b>준비 중</b>이에요 (경기도 데이터 인증키 확인이 필요해요). 우선 공식 조회 화면에서 확인해 주세요.</div>
+    <div class="row"><a class="btn ghost" href="https://search.konacard.co.kr/payable-merchants" target="_blank" rel="noopener noreferrer">경기지역화폐 가맹점 조회 ↗</a>
+    <a class="btn ghost" href="https://www.onnuri.gift/" target="_blank" rel="noopener noreferrer">온누리 공식 사이트 ↗</a></div></div>`;
+}
+render();
+initFirebase();
+</script>
+</body>
+</html>

@@ -185,5 +185,43 @@ const clearAuth=()=>fetch('http://127.0.0.1:9099/emulator/v1/projects/demo-auto-
   ok('다른 기기에서도 같은 비교 대상(3장)과 같은 영역 합계',B2.X.rank().map(x=>x.c.id).sort().join()==='nhnew,samsung,shinhan'&&B2.X.nhAreaTotals('nhnew','2026-10-07')[2]===223456&&B2.X.nhAreaTotals('nhnew','2026-10-07')[6]===50000);
   B2.X.toggleCard('nhnew',false);
   ok('한 기기에서 체크 해제 → 다른 기기에 실시간 반영',await waitFor(()=>A2.X.S.enabled.join()==='shinhan,samsung'));
+
+  // ═════════ 공용 설정(config/odcloud): 로그인한 사용자는 읽기만, 쓰기는 모두 불가 (저장소의 firestore.rules 그대로) ═════════
+  await clearDb();await clearAuth();
+  const CFGKEY='a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2';
+  const adminSet=(path,fields)=>fetch(`http://127.0.0.1:8080/v1/projects/demo-auto-card/databases/(default)/documents/${path}`,{method:'PATCH',headers:{Authorization:'Bearer owner','Content-Type':'application/json'},body:JSON.stringify({fields})});
+  await adminSet('config/odcloud',{onnuriKey:{stringValue:CFGKEY}});
+  const U1=device();await U1.fb.auth().createUserWithEmailAndPassword('cfg1@example.com',PW);const u1id=uidOf(U1);
+  let r1='',e1='';try{const sn=await U1.fb.firestore().doc('config/odcloud').get({source:'server'});r1=sn.exists&&sn.data().onnuriKey}catch(e){e1=e.code}
+  ok('로그인한 사용자는 config/odcloud 읽기 가능',r1===CFGKEY,e1);
+  for(const [name,fn] of [['set',d=>d.set({onnuriKey:'hijack'})],['merge 수정',d=>d.set({onnuriKey:'hijack'},{merge:true})],['update',d=>d.update({onnuriKey:'hijack'})],['delete',d=>d.delete()]]){
+    let c='';try{await fn(U1.fb.firestore().doc('config/odcloud'))}catch(e){c=e.code}
+    ok(`로그인한 사용자도 config/odcloud ${name} 불가`,c==='permission-denied',c)}
+  let c2='';try{await U1.fb.firestore().doc('config/newdoc').set({a:1})}catch(e){c2=e.code}
+  ok('config 아래 새 문서 만들기도 불가',c2==='permission-denied',c2);
+  const rawKey=await fetch('http://127.0.0.1:8080/v1/projects/demo-auto-card/databases/(default)/documents/config/odcloud',{headers:{Authorization:'Bearer owner'}}).then(r=>r.json());
+  ok('서버의 키 값은 그대로',rawKey.fields.onnuriKey.stringValue===CFGKEY);
+  await U1.fb.auth().signOut();let e3='';try{await U1.fb.firestore().doc('config/odcloud').get({source:'server'})}catch(e){e3=e.code}
+  ok('로그아웃(비로그인) 상태에서는 키를 읽을 수 없음',e3==='permission-denied',e3);
+  // 사용자 데이터 규칙은 그대로
+  const U2=device();await U2.fb.auth().createUserWithEmailAndPassword('cfg2@example.com',PW);const u2=uidOf(U2);
+  let e4='';try{await U2.fb.firestore().doc('users/'+u1id).get({source:'server'})}catch(e){e4=e.code}
+  ok('(회귀) 다른 사용자의 users 문서는 여전히 읽기 불가',e4==='permission-denied',e4);
+  let e5='';try{await U2.fb.firestore().doc('users/'+u2).set({state:{ok:1}})}catch(e){e5=e.code}
+  ok('(회귀) 본인 users 문서는 여전히 쓰기 가능',e5==='',e5);
+
+  // ── merchant.html 의 키 읽기를 실제 SDK + 실제 규칙으로 ──
+  const vm=require('vm'),fs=require('fs'),pathm=require('path');
+  const MSRC=fs.readFileSync(pathm.join(__dirname,'..','merchant.html'),'utf8').match(/<script>([\s\S]*)<\/script>/)[1];
+  const bootM=()=>{const fb=freshFirebase();const els={},logs=[];const ctx={document:{getElementById:id=>els[id]=els[id]||{value:''}},navigator:{},console:{log:(...a)=>logs.push(a.join(' ')),warn:(...a)=>logs.push(a.join(' ')),error:(...a)=>logs.push(a.join(' '))},firebase:fb,fetch:async()=>({status:500,ok:false,json:async()=>({})}),AbortController,URLSearchParams,setTimeout,clearTimeout,Promise,JSON,Math,Date,Number,Object,Array,String,isFinite};
+    vm.createContext(ctx);vm.runInContext(MSRC+';globalThis.M={S,render}',ctx);return{M:ctx.M,fb,els,logs,html:()=>els.app.innerHTML}};
+  const MP=bootM();await sleep(300);
+  ok('(실제 SDK) 로그인 전: 로그인 필요 상태, 키 없음',MP.M.S.auth==='out'&&MP.M.S.key==='');
+  await MP.fb.auth().signInWithEmailAndPassword('cfg2@example.com',PW);
+  ok('(실제 SDK·규칙) 로그인하면 merchant 페이지가 config/odcloud의 키를 읽음',await waitFor(()=>MP.M.S.keyStatus==='ok'&&MP.M.S.key===CFGKEY),MP.M.S.keyStatus);
+  ok('(실제 SDK) 키가 화면·콘솔에 노출되지 않음',!MP.html().includes(CFGKEY)&&!MP.logs.join('\n').includes(CFGKEY));
+  await fetch('http://127.0.0.1:8080/v1/projects/demo-auto-card/databases/(default)/documents/config/odcloud',{method:'DELETE',headers:{Authorization:'Bearer owner'}});
+  const MQ=bootM();await sleep(300);await MQ.fb.auth().signInWithEmailAndPassword('cfg2@example.com',PW);
+  ok('(실제 SDK) 키 문서가 없으면 "missing" 안내',await waitFor(()=>MQ.M.S.keyStatus==='missing')&&/config \/ odcloud/.test(MQ.html().replace(/<[^>]+>/g,' ').replace(/\s+/g,' ')),MQ.M.S.keyStatus);
   const f=done('emulator');process.exit(f?1:0);
 })().catch(e=>{console.log('CRASH',e);process.exit(2)});
