@@ -19,10 +19,10 @@ function boot({user=null,doc,docErr,ggDoc,ggErr,fetchImpl,geo,noFirebase=false}=
     fetch:async(u,o)=>{fetches.push({url:String(u),opt:o});return fetchImpl(String(u),o)},AbortController,URLSearchParams,setTimeout,clearTimeout,Promise,JSON,Math,Date,Number,Object,Array,String,isFinite,window:{addEventListener:(e,f)=>{if(e==='keydown')keyHandlers.push(f)}}};
   if(fb)ctx.firebase=fb;
   vm.createContext(ctx);
-  vm.runInContext(SRC+';globalThis.M={G,SIGUN,GG_URL,GG_KEY_RE,ggBuildUrl,ggParse,ggNorm,ggTypeLabel,ggOpen,ggStatusLabel,ggView,ggSearch,ggMore,ggSet,ggToggle,ggOpenStore,ggCloseStore,ggPopup,ggClean,guessSigun,distKm,fmtKm,loadGgKey,openStore,closeStore,storePopup,mapQuery,S,render,esc,guessSido,buildUrl,latestPath,normRow,search,locate,onSearch,setQ,loadKey,login,resolvePath,SIDO,SIDO_PTS,KEY_RE,PER_PAGE,authBox,resultsBox,fmtDate}',ctx);
+  vm.runInContext(SRC+';globalThis.M={diagKey,G,SIGUN,GG_URL,GG_KEY_RE,ggBuildUrl,ggParse,ggNorm,ggTypeLabel,ggOpen,ggStatusLabel,ggView,ggSearch,ggMore,ggSet,ggToggle,ggOpenStore,ggCloseStore,ggPopup,ggClean,guessSigun,distKm,fmtKm,loadGgKey,openStore,closeStore,storePopup,mapQuery,S,render,esc,guessSido,buildUrl,latestPath,normRow,search,locate,onSearch,setQ,loadKey,login,resolvePath,SIDO,SIDO_PTS,KEY_RE,PER_PAGE,authBox,resultsBox,fmtDate}',ctx);
   const html=()=>els.app.innerHTML;
   const signIn=async()=>{authCbs.forEach(c=>c(user));await sleep(20)};
-  return{M:ctx.M,ctx,els,logs,fetches,html,keyHandlers,signIn,text:()=>html().replace(/<[^>]+>/g,' ').replace(/\s+/g,' ')};
+  return{M:ctx.M,ctx,els,logs,fetches,html,keyHandlers,signIn,text:()=>html().replace(/<[^>]+>/g,' ').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/\s+/g,' ')};   // 화면에 보이는 글자(HTML 이스케이프는 풀어서 비교)
 }
 const api=(rows,total)=>async(u)=>u.includes('infuser.odcloud.kr')?jres(200,SWG):page(rows,total);
 
@@ -224,6 +224,40 @@ const api=(rows,total)=>async(u)=>u.includes('infuser.odcloud.kr')?jres(200,SWG)
     b=mk({ggErr:{code:'unavailable'}});await b.signIn();ok('네트워크 오류 → 새로고침 안내',b.M.G.st==='error'&&/경기도 조회 키를 불러오지 못했어요/.test(b.text()));
     b=mk({ggDoc:{ggKey:'  '+GKEY+'  '}});await b.signIn();ok('키 앞뒤 공백 제거',b.M.G.key===GKEY);
     b=boot({user:null,fetchImpl:api([])});await b.signIn();ok('로그아웃 상태: 로그인 안내, 조회 폼 없음',/로그인하면 앱 안에서 조회할 수 있어요/.test(b.text())&&!/id="g_name"/.test(b.html()))}
+  // ── 키 진단: 필드 이름·길이·종류만 알려주고 값은 절대 노출하지 않음 ──
+  { const SECRET='AbCdEfGh12345678SECRETVALUE9999';
+    const M=boot({fetchImpl:api([])}).M;const RE=/^[A-Za-z0-9]{16,64}$/;
+    const cases=[
+      ['필드 이름 대소문자 다름',{ggkey:SECRET},/필드 이름이 "ggkey"로 되어 있어요/],
+      ['필드 이름 뒤에 공백',{'ggKey ':SECRET},/필드 이름이 "ggKey "로 되어 있어요/],
+      ['필드 없음(다른 이름)',{apiKey:SECRET},/"ggKey" 필드가 없어요.*현재 필드: apiKey/],
+      ['빈 문서',{},/현재 필드: 없음/],
+      ['숫자 타입',{ggKey:12345},/문자열이 아니에요.*number/],
+      ['null',{ggKey:null},/문자열이 아니에요.*null/],
+      ['빈 문자열',{ggKey:'   '},/비어 있어요/],
+      ['따옴표 포함',{ggKey:'"'+SECRET+'"'},/따옴표가 들어 있어요/],
+      ['가운데 공백',{ggKey:'AbCdEfGh1234 5678SECRETVALUE9999'},/가운데에 공백·줄바꿈이 있어요/],
+      ['줄바꿈',{ggKey:'AbCdEfGh1234\n5678SECRETVALUE9999'},/가운데에 공백·줄바꿈이 있어요/],
+      ['URL을 붙임',{ggKey:'https://openapi.gg.go.kr/RegionMnyFacltStus?KEY='+SECRET},/주소\(URL\)/],
+      ['한글 섞임',{ggKey:'AbCdEfGh12345678한글9999'},/영숫자가 아닌 문자/],
+      ['너무 짧음',{ggKey:'abc123'},/길이 6자.*길이가 맞지 않아요/],
+      ['너무 김',{ggKey:'a'.repeat(80)},/길이 80자.*길이가 맞지 않아요/]];
+    for(const [name,doc,re] of cases){const out=M.diagKey(doc,Object.keys(doc).includes('ggKey ')?'ggKey':'ggKey',RE);
+      ok(`키 진단: ${name}`,re.test(out),out);
+      ok(`키 진단(${name}): 값 자체를 노출하지 않음`,!out.includes('SECRETVALUE')&&!out.includes('AbCdEfGh'),out)}
+    ok('키 진단: 정상 형식이면 "형식이 맞지 않아요"로 떨어짐(드문 경우)',/값 길이 \d+자/.test(M.diagKey({ggKey:'a'.repeat(40)},'ggKey',/^x$/)));
+    ok('키 진단: 잘못된 입력(null, 문자열 문서)에도 안전',M.diagKey(null,'ggKey',RE).includes('필드가 없어요')&&M.diagKey('x','ggKey',RE).includes('필드가 없어요'));
+    // 화면 통합: 경기 키 문서가 잘못되면 화면에 진단이 보이고, 값은 안 보임
+    const mkb=async(ggDoc,doc={onnuriKey:KEY})=>{const b=boot({user:{uid:'u1'},doc,ggDoc,fetchImpl:api([])});await b.signIn();return b};
+    let b=await mkb({ggkey:SECRET});
+    ok('화면: 경기 키 문서의 필드 이름이 잘못되면 "필드 이름이 ggkey로 되어 있어요" 안내',b.M.G.st==='invalid'&&/등록된 경기도 조회 키의 형식이 올바르지 않아요/.test(b.text())&&/필드 이름이 "ggkey"로 되어 있어요/.test(b.text()));
+    ok('화면: 진단 화면에도 키 값이 없음',!b.html().includes('SECRETVALUE')&&!b.logs.join('\n').includes('SECRETVALUE'));
+    b=await mkb({ggKey:'"'+SECRET+'"'});ok('화면: 따옴표가 섞인 경기 키 → "따옴표가 들어 있어요"',/따옴표가 들어 있어요/.test(b.text())&&!b.html().includes('SECRETVALUE'));
+    b=await mkb({ggKey:SECRET});ok('화면: 정상 형식 키는 진단 없이 조회 폼이 열림',b.M.G.st==='ok'&&!/🔎/.test(b.text())&&/id="g_name"/.test(b.html()));
+    b=await mkb({ggKey:SECRET},{onnuriKey:'짧음'});ok('화면: 온누리 키 문서가 잘못돼도 진단(길이)이 보임',b.M.S.keyStatus==='invalid'&&/값 길이 2자/.test(b.text())&&/onnuriKey/.test(b.html()||'x')||/값 길이 2자/.test(b.text()));
+    b=await mkb({ggKey:SECRET},{other:1});ok('화면: 온누리 키 필드가 없으면 현재 필드 이름을 알려 줌',/"onnuriKey" 필드가 없어요.*현재 필드: other/.test(b.text()));
+    // 문서를 고친 뒤(다시 불러오면) 진단이 사라짐
+    const fix=boot({user:{uid:'u1'},doc:{onnuriKey:KEY},ggDoc:{ggKey:SECRET},fetchImpl:api([])});await fix.signIn();fix.M.G.diag='old';await fix.M.loadGgKey();ok('문서를 고친 뒤 다시 읽으면 진단이 지워지고 정상',fix.M.G.st==='ok'&&fix.M.G.diag==='')}
   // ── 조회 ──
   { const ggFetch=(handler)=>async(u,o)=>u.includes('openapi.gg.go.kr')?handler(u,o):u.includes('infuser')?jres(200,SWG):page([]);
     const mk=async(handler,extra={})=>{const b=boot({user:{uid:'u1'},doc:{onnuriKey:KEY},ggDoc:{ggKey:GKEY},fetchImpl:ggFetch(handler),...extra});await b.signIn();return b};

@@ -154,10 +154,32 @@ function storePopup(r){
 function openStore(i){if(!(i>=0&&S.rows[i]))return;S.sel=i;render()}
 function closeStore(){if(S.sel<0)return;S.sel=-1;render()}
 
+// 키 문서의 어디가 문제인지 알려주는 진단. 필드 '이름'과 값의 '길이·종류'만 사용하고 값 자체는 어디에도 쓰지 않음
+function diagKey(d,field,re){
+  d=d&&typeof d==='object'?d:{};
+  if(!(field in d)){
+    const near=Object.keys(d).find(k=>k.trim().toLowerCase()===field.toLowerCase());
+    return near?`필드 이름이 "${near}"로 되어 있어요. 정확히 "${field}"(대소문자·공백 포함)여야 해요.`:`"${field}" 필드가 없어요. (현재 필드: ${Object.keys(d).join(', ')||'없음'})`;
+  }
+  const v=d[field];
+  if(typeof v!=='string')return`"${field}" 값이 문자열이 아니에요 (현재 타입: ${v===null?'null':typeof v}). 문자열(string)로 만들어 주세요.`;
+  const t=v.trim(),why=[];
+  if(!t)why.push('비어 있어요');
+  else{
+    if(/^https?:/i.test(t))why.push('키가 아니라 주소(URL)가 들어 있어요');
+    if(/["'`]/.test(t))why.push('따옴표가 들어 있어요');
+    if(/\s/.test(t))why.push('가운데에 공백·줄바꿈이 있어요');
+    if(/[^\x21-\x7e]/.test(t.replace(/\s/g,'')))why.push('한글 등 영숫자가 아닌 문자가 있어요');
+    if(/[^A-Za-z0-9+/=%_-]/.test(t.replace(/["'`\s]/g,''))&&!why.length)why.push('허용되지 않는 기호가 있어요');
+    if(!why.length&&!re.test(t))why.push('길이가 맞지 않아요');
+  }
+  return`값 길이 ${t.length}자 · 문제: ${why.join(', ')||'형식이 맞지 않아요'}. 키만 정확히 붙여 넣어 주세요.`;
+}
+
 // ───────────── 상태 ─────────────
 // auth: init(확인 중) | out(로그인 필요) | in | nofirebase(로그인 기능 불러오기 실패)
 // keyStatus: none | loading | ok | missing(문서 없음) | invalid(형식 오류) | denied(권한 없음) | error
-const S={sel:-1,auth:'init',user:null,key:'',keyStatus:'none',path:'',dataDate:'',q:{name:'',sido:'',market:''},page:0,total:0,rows:[],msg:'',err:'',busy:false,loc:''};
+const S={diag:'',sel:-1,auth:'init',user:null,key:'',keyStatus:'none',path:'',dataDate:'',q:{name:'',sido:'',market:''},page:0,total:0,rows:[],msg:'',err:'',busy:false,loc:''};
 let fbAuth=null,fbDb=null;
 
 // ───────────── 로그인 · 키 읽기 ─────────────
@@ -166,16 +188,17 @@ function initFirebase(){
   try{
     firebase.initializeApp(FIREBASE_CONFIG);fbAuth=firebase.auth();fbDb=firebase.firestore();
     fbAuth.getRedirectResult().catch(()=>{});
-    fbAuth.onAuthStateChanged(u=>{S.user=u||null;if(u){S.auth='in';loadKey();loadGgKey()}else{S.auth='out';S.key='';S.keyStatus='none';G.key='';G.st='none';render()}});
+    fbAuth.onAuthStateChanged(u=>{S.user=u||null;if(u){S.auth='in';loadKey();loadGgKey()}else{S.auth='out';S.key='';S.keyStatus='none';S.diag='';G.key='';G.st='none';G.diag='';render()}});
   }catch(e){S.auth='nofirebase';render()}
 }
 async function loadKey(){
   S.keyStatus='loading';render();
   try{
-    const snap=await fbDb.doc('config/odcloud').get(),k=snap.exists?snap.data().onnuriKey:null;
+    const snap=await fbDb.doc('config/odcloud').get(),d=snap.exists?snap.data():null,k=d?d.onnuriKey:null;
+    S.diag='';
     if(!snap.exists)S.keyStatus='missing';
     else if(typeof k==='string'&&KEY_RE.test(k.trim())){S.key=k.trim();S.keyStatus='ok'}
-    else S.keyStatus='invalid';
+    else{S.keyStatus='invalid';S.diag=diagKey(d,'onnuriKey',KEY_RE)}
   }catch(e){S.keyStatus=e&&e.code==='permission-denied'?'denied':'error'}   // 키 값은 어떤 메시지·로그에도 쓰지 않음
   render();
 }
@@ -328,14 +351,15 @@ const ggStatusLabel=r=>r.stCode==='03'?'폐업'+(r.closed?' ('+fmtDate(r.closed)
 const GG_ERR={'ERROR-290':'경기도 API 키가 유효하지 않아요. 관리자에게 알려 주세요.','ERROR-337':'오늘 조회 가능한 횟수를 넘었어요. 내일 다시 시도해 주세요.','ERROR-336':'한 번에 가져올 수 있는 개수를 넘었어요.','ERROR-300':'필수 조건이 빠졌어요.'};
 
 // ───────────── 경기 상태 · 키 읽기 · 조회 ─────────────
-const G={st:'none',key:'',q:{sigun:'',name:''},all:[],total:0,apiPage:0,shown:GG_SHOW,openOnly:true,nearFirst:true,pos:null,busy:false,err:'',msg:'',sel:-1,searched:false};
+const G={diag:'',st:'none',key:'',q:{sigun:'',name:''},all:[],total:0,apiPage:0,shown:GG_SHOW,openOnly:true,nearFirst:true,pos:null,busy:false,err:'',msg:'',sel:-1,searched:false};
 async function loadGgKey(){
   G.st='loading';render();
   try{
-    const snap=await fbDb.doc('config/gg').get(),k=snap.exists?snap.data().ggKey:null;
+    const snap=await fbDb.doc('config/gg').get(),d=snap.exists?snap.data():null,k=d?d.ggKey:null;
+    G.diag='';
     if(!snap.exists)G.st='missing';
     else if(typeof k==='string'&&GG_KEY_RE.test(k.trim())){G.key=k.trim();G.st='ok'}
-    else G.st='invalid';
+    else{G.st='invalid';G.diag=diagKey(d,'ggKey',GG_KEY_RE)}
   }catch(e){G.st=e&&e.code==='permission-denied'?'denied':'error'}   // 키 값은 어떤 메시지·로그에도 쓰지 않음
   render();
 }
@@ -395,7 +419,7 @@ function ggPopup(r){
     <div class="stick"><button class="ghost" style="width:100%" onclick="ggCloseStore()">닫기</button></div></div></div>`;
 }
 function ggBox(){
-  const m={loading:['','경기도 조회 키를 불러오는 중…'],missing:['warn','경기도 조회 키가 아직 등록되지 않았어요. 관리자가 Firebase에 <b>config / gg</b> 문서(필드 <b>ggKey</b>)를 만들어야 해요.'],invalid:['bad','등록된 경기도 조회 키의 형식이 올바르지 않아요. 관리자에게 알려 주세요.'],denied:['bad','이 계정은 경기도 조회 키를 읽을 권한이 없어요.'],error:['bad','경기도 조회 키를 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.']}[G.st];
+  const m={loading:['','경기도 조회 키를 불러오는 중…'],missing:['warn','경기도 조회 키가 아직 등록되지 않았어요. 관리자가 Firebase에 <b>config / gg</b> 문서(필드 <b>ggKey</b>)를 만들어야 해요.'],invalid:['bad','등록된 경기도 조회 키의 형식이 올바르지 않아요. 관리자에게 알려 주세요.'+(G.diag?`<div class="mut" style="margin-top:4px">🔎 ${esc(G.diag)}</div>`:'')],denied:['bad','이 계정은 경기도 조회 키를 읽을 권한이 없어요.'],error:['bad','경기도 조회 키를 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.']}[G.st];
   const ok=G.st==='ok';
   let h=`<div class="card"><h2>경기지역화폐 가맹점 조회</h2>`;
   if(S.auth!=='in')h+=`<div class="mut" style="margin-bottom:8px">로그인하면 앱 안에서 조회할 수 있어요.</div>`;
@@ -437,7 +461,7 @@ function authBox(){
   }
   const m={loading:['','키를 불러오는 중…'],
     missing:['warn','조회 키가 아직 등록되지 않았어요. 관리자가 Firebase에 <b>config / odcloud</b> 문서를 만들어야 해요.'],
-    invalid:['bad','등록된 조회 키의 형식이 올바르지 않아요. 관리자에게 알려 주세요.'],
+    invalid:['bad','등록된 조회 키의 형식이 올바르지 않아요. 관리자에게 알려 주세요.'+(S.diag?`<div class="mut" style="margin-top:4px">🔎 ${esc(S.diag)}</div>`:'')],
     denied:['bad','이 계정은 조회 키를 읽을 권한이 없어요. (관리자가 접근을 허용해야 해요)'],
     error:['bad','조회 키를 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.']}[S.keyStatus];
   return m?`<div class="hint ${m[0]}">${m[1]}</div>`:'';
