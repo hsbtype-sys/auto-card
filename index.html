@@ -56,6 +56,7 @@ button.sm{padding:5px 9px;font-size:12px}
 .er.big b{font-size:17px}.er.big{border-top:2px solid var(--line)}.pos{color:var(--ok)}.neg b{color:var(--bad)}
 .eh{margin-top:10px;font-weight:700;font-size:13px}.ed{font-size:12.5px;margin:4px 0;padding-left:8px;border-left:3px solid var(--line)}
 .ew{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--soft);border-left:4px solid var(--warn);font-size:12.5px}
+.lnkrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .lnkbtn{display:inline-block;padding:7px 12px;border-radius:10px;background:var(--pri);color:#fff;font-size:13px;font-weight:600;text-decoration:none}
 .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .pickrow{display:flex;align-items:flex-start;gap:12px;padding:12px 2px;border-top:1px solid var(--line);margin:0;color:var(--tx);font-size:14px}.pickrow:first-child{border-top:0}
@@ -138,8 +139,11 @@ const CATNAME=Object.fromEntries(CATS);
 const PAY_ONLY={costco:{shop:'코스트코',only:'현대카드'}};
 const payBlocked=cat=>PAY_ONLY[cat]||null;
 // 지역화폐·상품권 사용처일 수 있는 곳: 카드 비교 아래에 참고 안내 (가맹점 조회가 없어 단정하지 않고 '일 수 있어요'로 안내)
-const LOCAL_PAY_NOTE={market:{shop:'전통시장·동네가게',lookup:{label:'온누리 가맹점 조회',url:'https://www.onnuri.gift/'}}};   // lookup: 공식 조회 페이지 연결(앱 안 조회가 생기면 교체)
-const localPayNote=cat=>LOCAL_PAY_NOTE[cat]?`<div class="hint" style="margin-top:4px"><b>💡 참고 · 온누리상품권·지역사랑상품권(지역화폐)</b><br>이런 곳(${LOCAL_PAY_NOTE[cat].shop})은 온누리상품권이나 지역화폐 가맹점일 수 있어요. 사용 가능 여부는 가게에 확인하시고, <b>구매하실 상품권(지역화폐)의 할인율을 확인한 뒤 구매하세요.</b>${LOCAL_PAY_NOTE[cat].lookup?`<div style="margin-top:8px"><a class="lnkbtn" href="${LOCAL_PAY_NOTE[cat].lookup.url}" target="_blank" rel="noopener noreferrer">${LOCAL_PAY_NOTE[cat].lookup.label} ↗</a></div>`:''}</div>`:'';
+// lookups: 공식 조회 페이지 연결(앱 안 조회가 생기면 교체). 경기지역화폐는 공식 사이트(gmoney.or.kr)의 '가맹점 찾기'가 정확한 조회처로 안내하는 주소를 사용
+const LOCAL_PAY_NOTE={market:{shop:'전통시장·동네가게',lookups:[
+  {label:'온누리 가맹점 조회',url:'https://www.onnuri.gift/'},
+  {label:'경기지역화폐 가맹점 조회',url:'https://search.konacard.co.kr/payable-merchants'}]}};
+const localPayNote=cat=>LOCAL_PAY_NOTE[cat]?`<div class="hint" style="margin-top:4px"><b>💡 참고 · 온누리상품권·지역사랑상품권(지역화폐)</b><br>이런 곳(${LOCAL_PAY_NOTE[cat].shop})은 온누리상품권이나 지역화폐 가맹점일 수 있어요. 사용 가능 여부는 가게에 확인하시고, <b>구매하실 상품권(지역화폐)의 할인율을 확인한 뒤 구매하세요.</b><div class="lnkrow">${LOCAL_PAY_NOTE[cat].lookups.map(l=>`<a class="lnkbtn" href="${l.url}" target="_blank" rel="noopener noreferrer">${l.label} ↗</a>`).join('')}</div><div class="mut" style="margin-top:6px">경기도 외 지역의 지역화폐는 해당 지자체 앱·홈페이지에서 확인하세요. 조회 결과가 실제와 다를 수 있어 가게에서 한 번 더 확인하시길 권해요.</div></div>`:'';
 const T=(p,a)=>{for(const[m,v]of a)if(p>=m)return v;return 0};
 const K=3e5;
 // 한도 풀: lim(전월실적) → 월(또는 연) 한도
