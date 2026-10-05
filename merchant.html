@@ -166,7 +166,7 @@ function initFirebase(){
   try{
     firebase.initializeApp(FIREBASE_CONFIG);fbAuth=firebase.auth();fbDb=firebase.firestore();
     fbAuth.getRedirectResult().catch(()=>{});
-    fbAuth.onAuthStateChanged(u=>{S.user=u||null;if(u){S.auth='in';loadKey()}else{S.auth='out';S.key='';S.keyStatus='none';render()}});
+    fbAuth.onAuthStateChanged(u=>{S.user=u||null;if(u){S.auth='in';loadKey();loadGgKey()}else{S.auth='out';S.key='';S.keyStatus='none';G.key='';G.st='none';render()}});
   }catch(e){S.auth='nofirebase';render()}
 }
 async function loadKey(){
@@ -195,7 +195,8 @@ function locate(){
   S.msg='현재 위치를 확인하는 중…';render();
   navigator.geolocation.getCurrentPosition(pos=>{
     const s=guessSido(pos.coords.latitude,pos.coords.longitude);
-    if(s){S.q.sido=s;S.loc=s;S.msg='현재 위치 기준 시·도를 '+(SIDO.find(x=>x[0]===s)||[0,s])[1]+'(으)로 추정했어요. 틀리면 직접 바꿔 주세요. (위치는 기기 안에서만 쓰이고 어디로도 보내지 않아요)'}
+    G.pos={lat:pos.coords.latitude,lon:pos.coords.longitude};const sg=s==='경기'?guessSigun(G.pos.lat,G.pos.lon):null;if(sg)G.q.sigun=sg;   // 경기도로 판별될 때만 (서울·인천에서 가까운 경기 시·군을 잘못 고르지 않게)
+    if(s){S.q.sido=s;S.loc=s;S.msg='현재 위치 기준 시·도를 '+(SIDO.find(x=>x[0]===s)||[0,s])[1]+'(으)로 추정했어요. 틀리면 직접 바꿔 주세요. '+(sg?' 경기도 안이라 시·군도 '+sg+'(으)로 골랐어요.':'')+' (위치는 기기 안에서만 쓰이고 어디로도 보내지 않아요)'}
     else S.msg='현재 위치에서 국내 시·도를 찾지 못했어요. 직접 선택해 주세요.';
     render();
   },err=>{
@@ -239,6 +240,193 @@ async function search(append){
 }
 function onSearch(ev){if(ev&&ev.preventDefault)ev.preventDefault();search(false);return false}
 function setQ(k,v){S.q[k]=v}
+
+// ───────────── 경기지역화폐 (경기데이터드림 오픈API) ─────────────
+// 확인된 동작: 시군(SIGUN_NM)=정확히 일치, 상호(CMPNM_NM)=포함 검색, 둘 다 함께 적용, 한 번에 최대 1000행, 영업상태는 서버에서 못 거름(앱에서 거름), %·* 같은 특수문자는 오류
+const GG_URL='https://openapi.gg.go.kr/RegionMnyFacltStus';
+const GG_KEY_RE=/^[A-Za-z0-9]{16,64}$/;
+const GG_PAGE=500,GG_SHOW=20;
+const SIGUN_PTS={
+ '수원시':[[37.2636,127.0286],[37.252,127.071],[37.287,126.999]],
+ '성남시':[[37.42,127.1265],[37.37,127.108],[37.445,127.138]],
+ '의정부시':[[37.7381,127.0337]],
+ '안양시':[[37.3943,126.9568],[37.4,126.923]],
+ '부천시':[[37.5034,126.766],[37.484,126.783]],
+ '광명시':[[37.4786,126.8645]],
+ '평택시':[[36.9921,127.1129],[37.083,127.054],[36.944,126.93]],
+ '동두천시':[[37.9036,127.0607]],
+ '안산시':[[37.3219,126.8309],[37.316,126.839],[37.295,126.833]],
+ '고양시':[[37.6584,126.832],[37.658,126.769],[37.637,126.832]],
+ '과천시':[[37.4292,126.9876]],
+ '구리시':[[37.5943,127.1296]],
+ '남양주시':[[37.636,127.2165],[37.613,127.156],[37.654,127.065]],
+ '오산시':[[37.1499,127.0775]],
+ '시흥시':[[37.38,126.803],[37.35,126.74]],
+ '군포시':[[37.3617,126.9352]],
+ '의왕시':[[37.3449,126.9683]],
+ '하남시':[[37.5393,127.2148],[37.56,127.19]],
+ '용인시':[[37.2411,127.1776],[37.322,127.095],[37.28,127.115],[37.33,127.11]],
+ '파주시':[[37.7599,126.78],[37.716,126.743]],
+ '이천시':[[37.272,127.435]],
+ '안성시':[[37.008,127.2797]],
+ '김포시':[[37.6153,126.7156],[37.645,126.67]],
+ '화성시':[[37.1996,126.8312],[37.2,127.096],[37.207,127.033],[37.133,126.914],[37.217,126.946]],
+ '광주시':[[37.4295,127.255]],
+ '양주시':[[37.7853,127.0457]],
+ '포천시':[[37.8949,127.2003]],
+ '여주시':[[37.2983,127.6374]],
+ '연천군':[[38.0966,127.0749]],
+ '가평군':[[37.8315,127.5095]],
+ '양평군':[[37.4917,127.4877]]};
+const SIGUN=Object.keys(SIGUN_PTS).map(n=>[n]);   // 시·군 목록(데이터의 SIGUN_NM 값). 넓은 시는 권역별 기준점을 여러 개 둠
+// 현재 위치 → 가장 가까운 시·군 (경기도 안(시군청 기준 40km 이내)일 때만)
+function guessSigun(lat,lon){
+  if(typeof lat!=='number'||typeof lon!=='number'||!isFinite(lat)||!isFinite(lon))return null;
+  let best=null,bd=Infinity;
+  for(const [n,list] of Object.entries(SIGUN_PTS))for(const [a,b] of list){const d=distKm({lat,lon},{lat:a,lon:b});if(d<bd){bd=d;best=n}}
+  return bd<=40?best:null;
+}
+function distKm(a,b){   // 하버사인
+  const R=6371,r=x=>x*Math.PI/180,dLa=r(b.lat-a.lat),dLo=r(b.lon-a.lon);
+  const h=Math.sin(dLa/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dLo/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+const fmtKm=k=>k<1?Math.max(10,Math.round(k*100)*10)+'m':(k<10?k.toFixed(1):Math.round(k))+'km';
+// 서버가 못 받는 특수문자(% _ * 따옴표 등)는 빼고 검색
+const ggClean=s=>String(s||'').replace(/[%_*'"`\;<>]/g,'').replace(/\s+/g,' ').trim();
+function ggBuildUrl(key,{sigun,name,page,size}){
+  const p=new URLSearchParams({KEY:key,Type:'json',pIndex:String(page||1),pSize:String(Math.min(1000,Math.max(1,size||GG_PAGE)))});
+  if(sigun)p.set('SIGUN_NM',sigun);
+  if(name)p.set('CMPNM_NM',name);
+  return GG_URL+'?'+p.toString();
+}
+// 정상 응답과 오류/없음 응답(최상위 RESULT) 두 형태를 모두 처리
+function ggParse(j){
+  if(j&&j.RegionMnyFacltStus){
+    const a=j.RegionMnyFacltStus,head=(a[0]&&a[0].head)||[],res=(head.find(x=>x&&x.RESULT)||{}).RESULT||{};
+    const tot=(head.find(x=>x&&x.list_total_count!=null)||{}).list_total_count;
+    return{code:res.CODE||'',total:Number(tot)||0,rows:Array.isArray(a[1]&&a[1].row)?a[1].row:[]};
+  }
+  if(j&&j.RESULT)return{code:j.RESULT.CODE||'',total:0,rows:[]};
+  return{code:'BAD',total:0,rows:[]};
+}
+function ggTypeLabel(s){
+  s=String(s||'').trim();let m=/^\d+\((.*)\)$/.exec(s)||/^\((.*)\)$/.exec(s);if(m)s=m[1];
+  s=s.split('/').map(x=>x.trim()).filter((x,i,a)=>a.indexOf(x)===i).join('/');             // "편의점/편의점" → "편의점"
+  const h=s.length/2;if(Number.isInteger(h)&&h>0&&s.slice(0,h)===s.slice(h))s=s.slice(0,h);   // "일반음식점일반음식점" → "일반음식점"
+  return s;
+}
+// 사업자등록번호 등 화면에 필요 없는 항목은 버림
+function ggNorm(r){
+  r=r||{};const lat=Number(r.REFINE_WGS84_LAT),lon=Number(r.REFINE_WGS84_LOGT);
+  return{name:r.CMPNM_NM,type:ggTypeLabel(r.INDUTYPE_NM),road:r.REFINE_ROADNM_ADDR,lot:r.REFINE_LOTNO_ADDR,zip:r.REFINE_ZIPNO,sigun:r.SIGUN_NM,
+    lat:isFinite(lat)&&lat>30&&lat<40?lat:null,lon:isFinite(lon)&&lon>120&&lon<135?lon:null,
+    stCode:String(r.LEAD_TAX_MAN_STATE_CD||''),stText:r.LEAD_TAX_MAN_STATE||'',closed:r.CLSBIZ_DAY||''};
+}
+const ggOpen=r=>r.stCode!=='02'&&r.stCode!=='03';   // 휴업(02)·폐업(03)이 아니면 영업 중으로 취급(코드를 모르면 숨기지 않음)
+const ggStatusLabel=r=>r.stCode==='03'?'폐업'+(r.closed?' ('+fmtDate(r.closed)+')':''):r.stCode==='02'?'휴업':r.stCode==='01'?'영업 중':(r.stText||'상태 정보 없음');
+const GG_ERR={'ERROR-290':'경기도 API 키가 유효하지 않아요. 관리자에게 알려 주세요.','ERROR-337':'오늘 조회 가능한 횟수를 넘었어요. 내일 다시 시도해 주세요.','ERROR-336':'한 번에 가져올 수 있는 개수를 넘었어요.','ERROR-300':'필수 조건이 빠졌어요.'};
+
+// ───────────── 경기 상태 · 키 읽기 · 조회 ─────────────
+const G={st:'none',key:'',q:{sigun:'',name:''},all:[],total:0,apiPage:0,shown:GG_SHOW,openOnly:true,nearFirst:true,pos:null,busy:false,err:'',msg:'',sel:-1,searched:false};
+async function loadGgKey(){
+  G.st='loading';render();
+  try{
+    const snap=await fbDb.doc('config/gg').get(),k=snap.exists?snap.data().ggKey:null;
+    if(!snap.exists)G.st='missing';
+    else if(typeof k==='string'&&GG_KEY_RE.test(k.trim())){G.key=k.trim();G.st='ok'}
+    else G.st='invalid';
+  }catch(e){G.st=e&&e.code==='permission-denied'?'denied':'error'}   // 키 값은 어떤 메시지·로그에도 쓰지 않음
+  render();
+}
+function ggView(){   // 필터·정렬이 적용된 화면용 목록
+  let v=G.all.map((r,i)=>({r,i}));
+  if(G.openOnly)v=v.filter(x=>ggOpen(x.r));
+  if(G.pos){v.forEach(x=>{x.d=x.r.lat!=null?distKm(G.pos,{lat:x.r.lat,lon:x.r.lon}):null});if(G.nearFirst)v.sort((a,b)=>(a.d==null)-(b.d==null)||(a.d-b.d))}
+  return v;
+}
+async function ggSearch(more){
+  G.err='';G.msg='';G.sel=-1;
+  if(G.st!=='ok'){G.err='먼저 로그인해 주세요.';render();return}
+  const name=ggClean(G.q.name);
+  if(!more){
+    if(!name){G.msg='가게 이름(일부)을 입력해 주세요. 예: 약국, 정육점';render();return}
+    if(name.length>30){G.msg='검색어는 30자 이내로 입력해 주세요.';render();return}
+  }
+  if(G.busy)return;
+  G.busy=true;render();
+  try{
+    const page=more?G.apiPage+1:1;
+    const res=await fetchT(ggBuildUrl(G.key,{sigun:G.q.sigun,name:more?G.last.name:name,page,size:GG_PAGE}),{referrerPolicy:'no-referrer'},20000);
+    if(!res.ok)throw new Error('경기도 서버에서 오류가 났어요 (코드 '+res.status+'). 잠시 후 다시 시도해 주세요.');
+    const p=ggParse(await res.json());
+    if(p.code==='INFO-200'){if(!more){G.all=[];G.total=0;G.apiPage=0}}
+    else if(p.code!=='INFO-000')throw new Error(GG_ERR[p.code]||('조회 중 오류가 났어요 ('+(p.code&&p.code!=='BAD'?p.code:'응답 형식 오류')+').'));
+    else{const rows=p.rows.map(ggNorm);G.all=more?G.all.concat(rows):rows;G.total=p.total;G.apiPage=page}
+    if(!more){G.last={name,sigun:G.q.sigun};G.shown=GG_SHOW;G.searched=true}
+  }catch(e){
+    G.err=e&&e.name==='AbortError'?'응답이 늦어요. 잠시 후 다시 시도해 주세요.':(e&&e.message&&!/fetch|network|Failed|NetworkError/i.test(e.message)?e.message:'조회하지 못했어요. 인터넷 연결을 확인하거나 잠시 후 다시 시도해 주세요.');
+    if(!more){G.all=[];G.total=0;G.apiPage=0;G.searched=false}
+  }finally{G.busy=false;render()}
+}
+async function ggMore(){
+  const v=ggView();
+  if(v.length>G.shown){G.shown+=GG_SHOW;render();return}
+  if(G.all.length<G.total){await ggSearch(true);G.shown+=GG_SHOW;render()}else{G.shown+=GG_SHOW;render()}
+}
+function ggOnSearch(ev){if(ev&&ev.preventDefault)ev.preventDefault();ggSearch(false);return false}
+function ggSet(k,v){if(k==='name'||k==='sigun')G.q[k]=v;else G[k]=v}
+function ggToggle(k,v){G[k]=v;G.shown=GG_SHOW;render()}
+function ggOpenStore(i){if(!(i>=0&&G.all[i]))return;G.sel=i;render()}
+function ggCloseStore(){if(G.sel<0)return;G.sel=-1;render()}
+
+function ggPopup(r){
+  const q=((r.name||'')+' '+(r.road||r.lot||r.sigun||'')).trim(),near=G.pos&&r.lat!=null?distKm(G.pos,{lat:r.lat,lon:r.lon}):null;
+  const kakao=r.lat!=null?'https://map.kakao.com/link/map/'+encodeURIComponent(r.name||'가맹점')+','+r.lat+','+r.lon:'https://map.kakao.com/?q='+encodeURIComponent(q);
+  const naver='https://map.naver.com/p/search/'+encodeURIComponent(q);
+  return`<div class="pop" onclick="ggCloseStore()"><div class="box" role="dialog" aria-modal="true" aria-label="${esc(r.name||'가맹점')} 상세" onclick="event.stopPropagation()">
+    <button class="x" id="pop_close" aria-label="닫기" onclick="ggCloseStore()">✕</button>
+    <h3>${esc(r.name||'(이름 없음)')}</h3>
+    ${er('업종',esc(r.type||'정보 없음'))}${er('시·군',esc(r.sigun||'정보 없음'))}${er('도로명주소',esc(r.road||'정보 없음'))}${r.lot?er('지번주소',esc(r.lot)):''}${r.zip?er('우편번호',esc(r.zip)):''}
+    ${er('영업 상태',esc(ggStatusLabel(r)))}${near!=null?er('내 위치에서',esc(fmtKm(near))):''}
+    <div class="acts"><a class="btn ghost" href="${esc(kakao)}" target="_blank" rel="noopener noreferrer">카카오맵에서 보기 ↗</a><a class="btn ghost" href="${esc(naver)}" target="_blank" rel="noopener noreferrer">네이버지도에서 찾기 ↗</a><a class="btn ghost" href="https://search.konacard.co.kr/payable-merchants" target="_blank" rel="noopener noreferrer">공식 매장 검색 ↗</a></div>
+    ${r.stCode==='03'||r.stCode==='02'?`<div class="sec warn"><b class="t">⚠ ${r.stCode==='03'?'폐업':'휴업'}한 곳이에요</b>지금은 이용할 수 없을 수 있어요. 가게에 먼저 확인하세요.</div>`:''}
+    <div class="sec"><b class="t">ℹ 가맹점 정보에 대해</b>이 정보는 카드사에 등록된 내용이라 <b>업종·상호 변경, 직영점 전환 등으로 실제와 다를 수 있어요.</b> 결제 가능 여부와 쓸 수 있는 상품권 종류는 가게나 경기지역화폐 앱에서 확인하세요.</div>
+    <div class="stick"><button class="ghost" style="width:100%" onclick="ggCloseStore()">닫기</button></div></div></div>`;
+}
+function ggBox(){
+  const m={loading:['','경기도 조회 키를 불러오는 중…'],missing:['warn','경기도 조회 키가 아직 등록되지 않았어요. 관리자가 Firebase에 <b>config / gg</b> 문서(필드 <b>ggKey</b>)를 만들어야 해요.'],invalid:['bad','등록된 경기도 조회 키의 형식이 올바르지 않아요. 관리자에게 알려 주세요.'],denied:['bad','이 계정은 경기도 조회 키를 읽을 권한이 없어요.'],error:['bad','경기도 조회 키를 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.']}[G.st];
+  const ok=G.st==='ok';
+  let h=`<div class="card"><h2>경기지역화폐 가맹점 조회</h2>`;
+  if(S.auth!=='in')h+=`<div class="mut" style="margin-bottom:8px">로그인하면 앱 안에서 조회할 수 있어요.</div>`;
+  else if(m)h+=`<div class="hint ${m[0]}">${m[1]}</div>`;
+  if(S.auth==='in'&&ok){
+    h+=`<form onsubmit="return ggOnSearch(event)"><label>가게명 (일부만 입력해도 돼요)</label><input id="g_name" type="text" maxlength="30" autocomplete="off" placeholder="예: 약국, 정육점" value="${esc(G.q.name)}" oninput="ggSet('name',this.value)">
+      <label>시·군</label><div class="row"><select id="g_sigun" class="grow" onchange="ggSet('sigun',this.value)"><option value="">경기도 전체</option>${SIGUN.map(([n])=>`<option value="${esc(n)}" ${G.q.sigun===n?'selected':''}>${esc(n)}</option>`).join('')}</select><button type="button" class="ghost" onclick="locate()">📍 현재 위치</button></div>
+      <label class="chk"><input type="checkbox" ${G.openOnly?'checked':''} onchange="ggToggle('openOnly',this.checked)"> 영업 중인 곳만 보기 (폐업·휴업 숨김)</label>
+      ${G.pos?`<label class="chk"><input type="checkbox" ${G.nearFirst?'checked':''} onchange="ggToggle('nearFirst',this.checked)"> 가까운 순으로 보기</label>`:''}
+      <div style="margin-top:12px"><button type="submit" style="width:100%" ${G.busy?'disabled':''}>${G.busy?'조회 중…':'경기지역화폐 조회'}</button></div></form>`;
+    if(G.err)h+=`<div class="hint bad" style="margin-top:10px">${esc(G.err)}</div>`;
+    if(G.msg)h+=`<div class="hint" style="margin-top:10px">${esc(G.msg)}</div>`;
+    if(G.searched&&!G.err){
+      const v=ggView();
+      if(!G.all.length)h+=`<div style="margin-top:10px"><b>조회된 가맹점이 없어요</b><div class="mut">상호의 일부만 넣거나 시·군을 바꿔 다시 찾아 보세요.</div></div>`;
+      else{
+        const hidden=G.all.length-v.length;
+        h+=`<div class="cnt" style="margin-top:10px">총 <b>${won(G.total)}곳</b>${G.all.length<G.total?` 중 ${won(G.all.length)}곳을 불러옴`:''} · 지금 목록 <b>${won(v.length)}곳</b>${hidden>0?` <span class="mut">(폐업·휴업 ${won(hidden)}곳 숨김)</span>`:''}</div>`;
+        if(!v.length)h+=`<div class="mut">불러온 결과가 모두 폐업·휴업이에요. "영업 중인 곳만 보기"를 끄거나 더 불러와 보세요.</div>`;
+        h+=v.slice(0,G.shown).map(({r,i,d})=>`<div class="store tap" role="button" tabindex="0" onclick="ggOpenStore(${i})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();ggOpenStore(${i})}"><span class="more">상세 ›</span><b>${esc(r.name||'(이름 없음)')}</b>
+          <div class="sub">${esc(r.type||'업종 정보 없음')} · ${esc(r.sigun||'')}</div><div class="sub">${esc(r.road||r.lot||'주소 정보 없음')}</div>
+          <span class="chip ${ggOpen(r)?'':'off'}">${esc(ggStatusLabel(r))}</span>${d!=null?`<span class="chip off">${esc(fmtKm(d))}</span>`:''}</div>`).join('');
+        if(v.length>G.shown||G.all.length<G.total)h+=`<button class="ghost" style="width:100%;margin-top:8px" onclick="ggMore()" ${G.busy?'disabled':''}>더 보기</button>`;
+        if(G.pos&&G.nearFirst&&G.all.length<G.total)h+=`<div class="mut" style="margin-top:6px">※ 가까운 순은 지금까지 불러온 ${won(G.all.length)}곳 안에서의 순서예요. 더 보기를 누르면 더 불러와요.</div>`;
+      }
+    }
+  }
+  h+=`<div class="mut" style="margin-top:10px">${ok?'정보는 경기도 공공데이터(카드사 등록 기준)예요. 폐업·변경은 늦게 반영될 수 있어요. ':''}공식 화면에서도 확인할 수 있어요.</div>
+    <div class="row" style="margin-top:8px"><a class="btn ghost" href="https://search.konacard.co.kr/payable-merchants" target="_blank" rel="noopener noreferrer">경기지역화폐 공식 매장 검색 ↗</a></div></div>`;
+  return h;
+}
 
 // ───────────── 화면 ─────────────
 function authBox(){
@@ -289,14 +477,13 @@ function render(){
   </form>
   ${resultsBox()}
   ${S.sel>=0&&S.rows[S.sel]?storePopup(S.rows[S.sel]):''}
-  <div class="card"><h2>경기지역화폐</h2>
-    <div class="mut" style="margin-bottom:8px">앱 안 조회는 <b>준비 중</b>이에요 (경기도 데이터 인증키 확인이 필요해요). 우선 공식 조회 화면에서 확인해 주세요.</div>
-    <div class="row"><a class="btn ghost" href="https://search.konacard.co.kr/payable-merchants" target="_blank" rel="noopener noreferrer">경기지역화폐 가맹점 조회 ↗</a>
-    <a class="btn ghost" href="https://www.onnuri.gift/" target="_blank" rel="noopener noreferrer">온누리 공식 사이트 ↗</a></div></div>`;
-  if(S.sel>=0){const c=document.getElementById('pop_close');if(c&&c.focus)c.focus()}
+  ${ggBox()}
+  ${G.sel>=0&&G.all[G.sel]?ggPopup(G.all[G.sel]):''}
+  <div class="row" style="margin-bottom:12px"><a class="btn ghost" href="https://www.onnuri.gift/" target="_blank" rel="noopener noreferrer">온누리 공식 사이트 ↗</a></div>`;
+  if(S.sel>=0||G.sel>=0){const c=document.getElementById('pop_close');if(c&&c.focus)c.focus()}
 }
 render();
-if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('keydown',e=>{if(e.key==='Escape')closeStore()});
+if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeStore();ggCloseStore()}});
 initFirebase();
 </script>
 </body>

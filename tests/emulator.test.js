@@ -1,5 +1,5 @@
 // 실제 Firebase compat SDK(10.12.0) + Firestore/Auth 에뮬레이터 + 실제 보안 규칙으로 앱의 동기화 코드를 검증
-// 실행: firebase emulators:start --only auth,firestore  (firestore.rules = 운영 규칙) 후  NODE_PATH=<firebase 설치 경로>/node_modules node tests/emulator.test.js
+// 실행: firebase emulators:start --only auth,firestore  (firestore.rules.txt 의 내용 = 운영 규칙) 후  NODE_PATH=<firebase 설치 경로>/node_modules node tests/emulator.test.js
 const {boot,ok,done,sleep}=require('./harness');
 const Module=require('module');
 function freshFirebase(){                       // 기기마다 독립된 SDK 인스턴스(상태 공유 방지)
@@ -186,7 +186,7 @@ const clearAuth=()=>fetch('http://127.0.0.1:9099/emulator/v1/projects/demo-auto-
   B2.X.toggleCard('nhnew',false);
   ok('한 기기에서 체크 해제 → 다른 기기에 실시간 반영',await waitFor(()=>A2.X.S.enabled.join()==='shinhan,samsung'));
 
-  // ═════════ 공용 설정(config/odcloud): 로그인한 사용자는 읽기만, 쓰기는 모두 불가 (저장소의 firestore.rules 그대로) ═════════
+  // ═════════ 공용 설정(config/odcloud): 로그인한 사용자는 읽기만, 쓰기는 모두 불가 (저장소의 firestore.rules.txt 그대로) ═════════
   await clearDb();await clearAuth();
   const CFGKEY='a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2';
   const adminSet=(path,fields)=>fetch(`http://127.0.0.1:8080/v1/projects/demo-auto-card/databases/(default)/documents/${path}`,{method:'PATCH',headers:{Authorization:'Bearer owner','Content-Type':'application/json'},body:JSON.stringify({fields})});
@@ -214,7 +214,7 @@ const clearAuth=()=>fetch('http://127.0.0.1:9099/emulator/v1/projects/demo-auto-
   const vm=require('vm'),fs=require('fs'),pathm=require('path');
   const MSRC=fs.readFileSync(pathm.join(__dirname,'..','merchant.html'),'utf8').match(/<script>([\s\S]*)<\/script>/)[1];
   const bootM=()=>{const fb=freshFirebase();const els={},logs=[];const ctx={document:{getElementById:id=>els[id]=els[id]||{value:''}},navigator:{},console:{log:(...a)=>logs.push(a.join(' ')),warn:(...a)=>logs.push(a.join(' ')),error:(...a)=>logs.push(a.join(' '))},firebase:fb,fetch:async()=>({status:500,ok:false,json:async()=>({})}),AbortController,URLSearchParams,setTimeout,clearTimeout,Promise,JSON,Math,Date,Number,Object,Array,String,isFinite};
-    vm.createContext(ctx);vm.runInContext(MSRC+';globalThis.M={S,render}',ctx);return{M:ctx.M,fb,els,logs,html:()=>els.app.innerHTML}};
+    vm.createContext(ctx);vm.runInContext(MSRC+';globalThis.M={S,render,G}',ctx);return{M:ctx.M,fb,els,logs,html:()=>els.app.innerHTML}};
   const MP=bootM();await sleep(300);
   ok('(실제 SDK) 로그인 전: 로그인 필요 상태, 키 없음',MP.M.S.auth==='out'&&MP.M.S.key==='');
   await MP.fb.auth().signInWithEmailAndPassword('cfg2@example.com',PW);
@@ -223,5 +223,15 @@ const clearAuth=()=>fetch('http://127.0.0.1:9099/emulator/v1/projects/demo-auto-
   await fetch('http://127.0.0.1:8080/v1/projects/demo-auto-card/databases/(default)/documents/config/odcloud',{method:'DELETE',headers:{Authorization:'Bearer owner'}});
   const MQ=bootM();await sleep(300);await MQ.fb.auth().signInWithEmailAndPassword('cfg2@example.com',PW);
   ok('(실제 SDK) 키 문서가 없으면 "missing" 안내',await waitFor(()=>MQ.M.S.keyStatus==='missing')&&/config \/ odcloud/.test(MQ.html().replace(/<[^>]+>/g,' ').replace(/\s+/g,' ')),MQ.M.S.keyStatus);
+
+  // ═════════ config/gg (경기도 API 키): 로그인한 사용자는 읽기만 ═════════
+  await adminSet('config/gg',{ggKey:{stringValue:'4b5b7651f0004801ab7a37ab6440907e'}});
+  const MG=bootM();await sleep(300);await MG.fb.auth().signInWithEmailAndPassword('cfg2@example.com',PW);
+  ok('(실제 SDK·규칙) 로그인하면 merchant 페이지가 config/gg의 경기 키를 읽음',await waitFor(()=>MG.M.G&&MG.M.G.st==='ok'&&MG.M.G.key==='4b5b7651f0004801ab7a37ab6440907e'),MG.M.G&&MG.M.G.st);
+  ok('(실제 SDK) 경기 키가 화면·콘솔에 노출되지 않음',!MG.html().includes('4b5b7651f0004801ab7a37ab6440907e')&&!MG.logs.join('\n').includes('4b5b7651f0004801ab7a37ab6440907e'));
+  let eg='';try{await U2.fb.firestore().doc('config/gg').set({ggKey:'hijack'})}catch(e){eg=e.code}
+  ok('로그인한 사용자도 config/gg 수정 불가',eg==='permission-denied',eg);
+  let eg2='';try{await U2.fb.firestore().doc('config/gg').delete()}catch(e){eg2=e.code}
+  ok('로그인한 사용자도 config/gg 삭제 불가',eg2==='permission-denied',eg2);
   const f=done('emulator');process.exit(f?1:0);
 })().catch(e=>{console.log('CRASH',e);process.exit(2)});
