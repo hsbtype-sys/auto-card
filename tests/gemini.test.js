@@ -4,6 +4,7 @@ const jres=(status,body)=>({status,ok:status>=200&&status<300,json:async()=>body
 const gem=obj=>jres(200,{candidates:[{content:{parts:[{text:typeof obj==='string'?obj:JSON.stringify(obj)}]}}]});
 function app(fetchImpl,store={}){const calls=[];const f=async(url,init)=>{calls.push({url,init});return fetchImpl(url,init,calls.length)};const b=boot({fetch:f,store});b.X.setRetryMs(5);b.calls=calls;return b}
 const today=()=>new Date().toLocaleDateString('sv');
+const nextSat=()=>{const d=new Date();d.setHours(0,0,0,0);while(d.getDay()!==6)d.setDate(d.getDate()+1);return d.toLocaleDateString('sv')};   // 앱 규칙: '토요일' = 오늘 기준 다가오는 토요일(오늘 포함)
 
 (async()=>{
   // ── 키 저장/삭제/표시 ──
@@ -35,7 +36,7 @@ const today=()=>new Date().toLocaleDateString('sv');
   b=app(()=>gem({amount:60000,category:'mart',date:'2026-10-03',simplePay:true,overseas:false,memberType:null,charger:null}));
   await b.X.gkSave(KEY);
   let r=await b.X.parseNaturalLanguage('토요일 이마트 6만원 SSG페이');
-  ok('정상 파싱',r.amount===60000&&r.cat==='mart'&&r.date==='2026-10-03'&&!('sp' in r)&&r.ov===false&&r.pt==='m'&&r.op==='',JSON.stringify(r));
+  ok('정상 파싱',r.amount===60000&&r.cat==='mart'&&r.date===nextSat()&&!('sp' in r)&&r.ov===false&&r.pt==='m'&&r.op==='',JSON.stringify(r));
   const c=b.calls[0];
   ok('요청: POST + 키는 헤더(x-goog-api-key), URL에는 없음',c.init.method==='POST'&&c.init.headers['x-goog-api-key']===KEY&&!c.url.includes(KEY)&&!c.url.includes('key='));
   ok('요청: generateContent 엔드포인트 + JSON 응답 요청',/generativelanguage\.googleapis\.com\/v1beta\/models\/[^/]+:generateContent$/.test(c.url)&&JSON.parse(c.init.body).generationConfig.responseMimeType==='application/json');
@@ -85,7 +86,7 @@ const today=()=>new Date().toLocaleDateString('sv');
   { const x=app((u)=>/lite/.test(u)?gem({amount:'',category:'mart'}):gem({amount:30000,category:'mart'}));await x.X.gkSave(KEY);
     for(const t of['이마트 3만원','이마트 30000','이마트 삼만원','이마트 3만'])x.calls.length=0,await x.X.parseNaturalLanguage(t),ok('승격 조건: 금액 표현이 있는 문장 → Flash로 ('+t+')',x.calls.length===2&&/3\.8-flash/.test(x.calls[1].url))}
   { const x=app(()=>gem({amount:null,category:'mart',date:'2026-10-03'}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('토요일 이마트 갔어');
-    ok('금액 표현이 전혀 없는 문장은 승격하지 않음 (Flash 한도 절약, Lite 1회로 종료)',x.calls.length===1&&q.amount===''&&q.cat==='mart'&&q.date==='2026-10-03')}
+    ok('금액 표현이 전혀 없는 문장은 승격하지 않음 (Flash 한도 절약, Lite 1회로 종료)',x.calls.length===1&&q.amount===''&&q.cat==='mart'&&q.date===nextSat())}
   { const x=app((u)=>/lite/.test(u)?gem({amount:null,category:'cvs'}):jres(503,{}));await x.X.gkSave(KEY);const q=await x.X.parseNaturalLanguage('편의점 5천원');
     ok('승격했는데 Flash가 전부 503 → Lite 결과(금액만 비어 있음)라도 반환, 오류로 끝내지 않음',q.cat==='cvs'&&q.amount===''&&x.calls.length===5,x.calls.map(mname).join('>'))}
   { const x=app((u)=>/lite/.test(u)?gem({amount:null,category:'cvs'}):gem({amount:5000,category:'cvs'}));await x.X.gkSave(KEY);
@@ -122,7 +123,7 @@ const today=()=>new Date().toLocaleDateString('sv');
   // UI 흐름 (nlRun → 폼 반영)
   b=app(()=>gem({amount:60000,category:'mart',date:'2026-10-03',simplePay:true}));await b.X.gkSave(KEY);
   b.dev.els.nlst={};b.X.setNl('토요일 이마트 6만원 SSG페이');await b.X.nlRun();
-  const f=b.X.getForm();ok('nlRun: 폼에 반영(금액/카테고리/날짜)',f.amount===60000&&f.cat==='mart'&&f.date==='2026-10-03');
+  const f=b.X.getForm();ok('nlRun: 폼에 반영(금액/카테고리/날짜)',f.amount===60000&&f.cat==='mart'&&f.date===nextSat());
   ok('nlRun: 상태 문구에 키 없음',!String(b.dev.els.nlst.textContent).includes(KEY)&&/인식/.test(b.dev.els.nlst.textContent));
   b=app(()=>jres(403,{}));await b.X.gkSave(KEY);b.dev.els.nlst={};b.X.setNl('x');await b.X.nlRun();
   ok('nlRun 실패: 폼 그대로, 안내 문구, 이후 재시도 가능',/키가 올바르지/.test(b.dev.els.nlst.textContent)&&b.X.getForm().amount==='');

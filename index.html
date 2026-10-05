@@ -127,7 +127,7 @@ const CARDS=[
  {id:'nhnew',name:'농협 올바른 NEW HAVE 체크',kind:'체크',fee:'연회비 없음',reward:1,noNew:1,nh:1,blurb:'모든 곳 0.2% 적립 + 이용 1·2위 영역 추가적립 (Mastercard/국내전용)'},
  {id:'nhone',name:'농협 올바른 NEW HAVE 원이 체크',kind:'체크',fee:'연회비 없음',reward:1,noNew:1,nh:1,blurb:'뉴해브와 동일 적립 + 올원뱅크 해외결제 수수료 캐시백 (UnionPay/국내전용)'}];
 const CATS=[
- ['mart','🛒 대형마트 (이마트·롯데마트·홈플러스)'],['costco','🏬 코스트코 (현대카드만 결제 가능)'],['online','🛍 온라인쇼핑 (쿠팡·11번가·G마켓·옥션·농협몰)'],['goods','🧴 잡화 (올리브영·다이소)'],['telecom','📞 이동통신 자동납부 (SKT·KT·LGU+)'],['cvs','🏪 편의점'],['hosp','💊 병원/약국'],
+ ['mart','🛒 대형마트 (이마트·롯데마트·홈플러스)'],['costco','🏬 코스트코 (현대카드만 결제 가능)'],['market','🧺 전통시장·동네가게'],['online','🛍 온라인쇼핑 (쿠팡·11번가·G마켓·옥션·농협몰)'],['goods','🧴 잡화 (올리브영·다이소)'],['telecom','📞 이동통신 자동납부 (SKT·KT·LGU+)'],['cvs','🏪 편의점'],['hosp','💊 병원/약국'],
  ['coffee','☕ 커피전문점 (스벅·커피빈 등)'],['transit','🚇 대중교통 (버스·지하철)'],['taxi','🚕 택시'],
  ['charge','⚡ 전기차 충전'],['hipass','🛣 하이패스'],['parking','🅿 주차장 (케이엠파크)'],['driver','🚗 대리운전 (카카오T)'],
  ['delivery','🛵 배달앱 (배민·쿠팡이츠)'],['stream','🎬 영상 스트리밍 정기결제'],['member','🎟 디지털 멤버십 (네이버플러스·쿠팡와우 등)'],
@@ -136,6 +136,9 @@ const CATNAME=Object.fromEntries(CATS);
 // 특정 카드만 결제되는 가맹점. 여기에 있는 카테고리는 내 카드(신한·하나·삼성)로 결제할 수 없다
 const PAY_ONLY={costco:{shop:'코스트코',only:'현대카드'}};
 const payBlocked=cat=>PAY_ONLY[cat]||null;
+// 지역화폐·상품권 사용처일 수 있는 곳: 카드 비교 아래에 참고 안내 (가맹점 조회가 없어 단정하지 않고 '일 수 있어요'로 안내)
+const LOCAL_PAY_NOTE={market:{shop:'전통시장·동네가게'}};
+const localPayNote=cat=>LOCAL_PAY_NOTE[cat]?`<div class="hint" style="margin-top:4px"><b>💡 참고 · 온누리상품권·지역사랑상품권(지역화폐)</b><br>이런 곳(${LOCAL_PAY_NOTE[cat].shop})은 온누리상품권이나 지역화폐 가맹점일 수 있어요. 사용 가능 여부는 가게에 확인하시고, <b>구매하실 상품권(지역화폐)의 할인율을 확인한 뒤 구매하세요.</b></div>`:'';
 const T=(p,a)=>{for(const[m,v]of a)if(p>=m)return v;return 0};
 const K=3e5;
 // 한도 풀: lim(전월실적) → 월(또는 연) 한도
@@ -803,7 +806,7 @@ function vRec(){
       <optgroup label="대상 카드 없음">${CHARGERS.map((c,i)=>!c[1]&&!c[2]?`<option value="${i}" ${form.op===String(i)?'selected':''}>${c[0]}</option>`:'').join('')}</optgroup></select>`:''}
     ${form.cat==='member'?`<label>멤버십 결제 유형</label><select onchange="setF('pt',this.value)"><option value="m" ${form.pt==='m'?'selected':''}>월 정기결제</option><option value="y" ${form.pt==='y'?'selected':''}>연 정기결제·기타 (하나카드 할인 1회만)</option></select>`:''}
     <label class="chk"><input type="checkbox" ${form.ov?'checked':''} onchange="setF('ov',this.checked)">해외 가맹점 결제 (삼성 해외 1%와 겹치면 큰 쪽만 적용)</label>
-  </div>${out||'<div class="mut" style="text-align:center;padding:20px">금액을 입력하면 카드별 할인액이 계산됩니다</div>'}`;
+  </div>${out||(LOCAL_PAY_NOTE[form.cat]?'':'<div class="mut" style="text-align:center;padding:20px">금액을 입력하면 카드별 할인액이 계산됩니다</div>')}${localPayNote(form.cat)}`;
 }
 function setF(k,v){form[k]=v;render()}
 // ───────────── 예상 할인 내역 팝업 ─────────────
