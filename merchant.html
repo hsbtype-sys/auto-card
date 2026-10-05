@@ -38,6 +38,17 @@ button:disabled{opacity:.5;cursor:default}
 .chip{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;margin:4px 6px 0 0;background:var(--soft);color:var(--pri)}
 .chip.off{background:transparent;color:var(--mut);border:1px solid var(--line);font-weight:500}
 .cnt{font-size:13px;margin:0 2px 8px}
+.store.tap{cursor:pointer;border-radius:8px}.store.tap:active,.store.tap:focus-visible{background:var(--soft);outline:none}
+.store .more{float:right;color:var(--pri);font-size:12px;font-weight:600}
+.pop{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.4);padding:20px}
+.pop .box{position:relative;background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:16px;max-width:440px;width:100%;max-height:88vh;overflow:auto;padding:16px 16px 0;box-shadow:0 16px 40px rgba(0,0,0,.28)}
+.pop h3{margin:0 30px 6px 0;font-size:17px}
+.pop .x{position:absolute;right:8px;top:8px;width:34px;height:34px;padding:0;background:transparent;color:var(--mut);font-size:16px;border-radius:10px}
+.er{display:flex;justify-content:space-between;gap:14px;padding:5px 0;border-top:1px solid var(--line);font-size:13.5px}.er>span:first-child{color:var(--mut);flex:none}.er b{font-weight:600;text-align:right}
+.sec{margin-top:10px;padding:8px 11px;border-radius:10px;background:var(--soft);font-size:13px}.sec b.t{display:block;margin-bottom:2px}
+.sec.warn{border-left:4px solid var(--warn)}
+.pop .stick{position:sticky;bottom:0;background:var(--card);padding:10px 0 14px;margin-top:6px}
+.pop .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.pop .acts .btn{padding:7px 11px;font-size:13px}
 </style>
 </head>
 <body>
@@ -117,10 +128,36 @@ async function fetchT(url,opt,ms){
   try{return await fetch(url,{...opt,signal:ac.signal})}finally{clearTimeout(t)}
 }
 
+// ───────────── 가게 상세 팝업 ─────────────
+// 같은 이름 가게를 구별할 수 있도록 '가게명 + 시장·상점가(없으면 시·도)'로 지도 검색 링크를 만든다 (주소가 없는 데이터의 한계 보완)
+const sidoLabel=v=>(SIDO.find(x=>x[0]===v)||[0,v||''])[1];
+function mapQuery(r){return((r.name||'')+' '+(r.market||sidoLabel(r.sido).replace('·',' '))).trim()}
+const MAP_LINKS=[['카카오맵',q=>'https://map.kakao.com/?q='+encodeURIComponent(q)],['네이버지도',q=>'https://map.naver.com/p/search/'+encodeURIComponent(q)]];
+const er=(k,v)=>`<div class="er"><span>${k}</span><b>${v}</b></div>`;
+function storePopup(r){
+  const q=mapQuery(r);
+  const digital=r.digital?`<div class="sec"><b class="t">💳 디지털 온누리상품권으로 결제할 때</b>
+      앱에 <b>본인 카드를 등록해 충전</b>한 뒤, 등록한 카드나 QR로 결제하는 방식이에요. 가게마다 되는 카드가 다른 게 아니라, <b>앱에 등록할 수 있는 카드사가 정해져</b> 있어요 (신한·현대·삼성·농협·하나·BC·KB국민·롯데로 알려져 있어요).
+      <div class="mut" style="margin-top:4px">※ 이 안내는 공공데이터가 아니라 일반 정보예요. 카드사 목록은 바뀔 수 있으니 <b>디지털온누리 앱이나 공식 사이트에서 확인</b>하세요.</div></div>
+    <div class="sec warn"><b class="t">⚠ 카드 실적·혜택 참고</b>상품권 충전은 카드 <b>전월 실적이나 할인 혜택에서 제외될 수 있어요</b> (카드마다 달라요). 이용하는 카드사에 확인하세요.</div>`
+    :`<div class="sec"><b class="t">디지털 가맹으로는 등록돼 있지 않아요</b>이 데이터에서는 지류형(종이) 가맹으로만 확인돼요. 디지털 온누리 결제가 되는지는 가게에 직접 확인하세요.</div>`;
+  return`<div class="pop" onclick="closeStore()"><div class="box" role="dialog" aria-modal="true" aria-label="${esc(r.name||'가맹점')} 상세" onclick="event.stopPropagation()">
+    <button class="x" id="pop_close" aria-label="닫기" onclick="closeStore()">✕</button>
+    <h3>${esc(r.name||'(이름 없음)')}</h3>
+    ${er('소속 시장·상점가',esc(r.market||'정보 없음'))}${er('시·도',esc(sidoLabel(r.sido)||'정보 없음'))}${er('취급품목',esc(r.item||'정보 없음'))}
+    ${er('지류형 가맹',r.paper?'가능':'정보 없음')}${er('디지털형 가맹',r.digital?'가능':'정보 없음')}${r.year?er('가맹 등록',esc(r.year)+'년'):''}
+    <div class="mut" style="margin-top:10px">같은 이름의 다른 가게와 헷갈리지 않게 지도에서 위치를 확인해 보세요.</div>
+    <div class="acts">${MAP_LINKS.map(([n,f])=>`<a class="btn ghost" href="${esc(f(q))}" target="_blank" rel="noopener noreferrer">${n}에서 찾기 ↗</a>`).join('')}<a class="btn ghost" href="https://www.onnuri.gift/" target="_blank" rel="noopener noreferrer">온누리 공식 사이트 ↗</a></div>
+    ${digital}
+    <div class="stick"><button class="ghost" style="width:100%" onclick="closeStore()">닫기</button></div></div></div>`;
+}
+function openStore(i){if(!(i>=0&&S.rows[i]))return;S.sel=i;render()}
+function closeStore(){if(S.sel<0)return;S.sel=-1;render()}
+
 // ───────────── 상태 ─────────────
 // auth: init(확인 중) | out(로그인 필요) | in | nofirebase(로그인 기능 불러오기 실패)
 // keyStatus: none | loading | ok | missing(문서 없음) | invalid(형식 오류) | denied(권한 없음) | error
-const S={auth:'init',user:null,key:'',keyStatus:'none',path:'',dataDate:'',q:{name:'',sido:'',market:''},page:0,total:0,rows:[],msg:'',err:'',busy:false,loc:''};
+const S={sel:-1,auth:'init',user:null,key:'',keyStatus:'none',path:'',dataDate:'',q:{name:'',sido:'',market:''},page:0,total:0,rows:[],msg:'',err:'',busy:false,loc:''};
 let fbAuth=null,fbDb=null;
 
 // ───────────── 로그인 · 키 읽기 ─────────────
@@ -178,7 +215,7 @@ async function resolvePath(){
 }
 async function search(append){
   const name=S.q.name.trim(),market=S.q.market.trim();
-  S.err='';S.msg='';
+  S.err='';S.msg='';S.sel=-1;
   if(S.keyStatus!=='ok'){S.err='먼저 로그인해 주세요.';render();return}
   if(!name&&!market){S.msg='가게명이나 시장·상점가명을 입력해 주세요. (시·도만으로는 결과가 너무 많아요)';render();return}
   if(name.length>30||market.length>30){S.msg='검색어는 30자 이내로 입력해 주세요.';render();return}
@@ -227,7 +264,7 @@ function resultsBox(){
     }else{
       h+=`<div class="cnt">총 <b>${won(S.total)}곳</b> 중 ${won(S.rows.length)}곳 표시${S.dataDate?` <span class="mut">· 데이터 기준 ${esc(fmtDate(S.dataDate))}</span>`:''}</div>`;
       if(S.total>200)h+=`<div class="hint warn">같은 이름의 가게가 많아요. <b>시·도</b>를 고르거나 <b>시장·상점가명</b>을 함께 넣으면 더 정확해요.</div>`;
-      h+=`<div class="card">`+S.rows.map(r=>`<div class="store"><b>${esc(r.name||'(이름 없음)')}</b>
+      h+=`<div class="card">`+S.rows.map((r,i)=>`<div class="store tap" role="button" tabindex="0" onclick="openStore(${i})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openStore(${i})}"><span class="more">상세 ›</span><b>${esc(r.name||'(이름 없음)')}</b>
         <div class="sub">${esc(r.market||'소속 시장·상점가 정보 없음')} · ${esc((SIDO.find(x=>x[0]===r.sido)||[0,r.sido||'지역 정보 없음'])[1])}</div>
         <div class="sub">${r.item?esc(r.item):'취급품목 정보 없음'}</div>
         <span class="chip ${r.paper?'':'off'}">지류형 ${r.paper?'가능':'정보 없음'}</span><span class="chip ${r.digital?'':'off'}">디지털 ${r.digital?'가능':'정보 없음'}</span>${r.year?`<span class="chip off">${esc(r.year)}년 등록</span>`:''}</div>`).join('')+`</div>`;
@@ -251,12 +288,15 @@ function render(){
     <div style="margin-top:12px"><button type="submit" style="width:100%" ${ok&&!S.busy?'':'disabled'}>${S.busy?'조회 중…':'조회하기'}</button></div>
   </form>
   ${resultsBox()}
+  ${S.sel>=0&&S.rows[S.sel]?storePopup(S.rows[S.sel]):''}
   <div class="card"><h2>경기지역화폐</h2>
     <div class="mut" style="margin-bottom:8px">앱 안 조회는 <b>준비 중</b>이에요 (경기도 데이터 인증키 확인이 필요해요). 우선 공식 조회 화면에서 확인해 주세요.</div>
     <div class="row"><a class="btn ghost" href="https://search.konacard.co.kr/payable-merchants" target="_blank" rel="noopener noreferrer">경기지역화폐 가맹점 조회 ↗</a>
     <a class="btn ghost" href="https://www.onnuri.gift/" target="_blank" rel="noopener noreferrer">온누리 공식 사이트 ↗</a></div></div>`;
+  if(S.sel>=0){const c=document.getElementById('pop_close');if(c&&c.focus)c.focus()}
 }
 render();
+if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('keydown',e=>{if(e.key==='Escape')closeStore()});
 initFirebase();
 </script>
 </body>

@@ -11,18 +11,18 @@ const page=(rows,total)=>jres(200,{currentCount:rows.length,data:rows,matchCount
 const SWG={paths:{'/3060079/v1/uddi:old':{get:{summary:'소상공인시장진흥공단_전국 온누리상품권 가맹점 현황_20250731'}},'/3060079/v1/uddi:new':{get:{summary:'소상공인시장진흥공단_전국 온누리상품권 가맹점 현황_20260731'}},'/3060079/v1/uddi:mid':{get:{summary:'소상공인시장진흥공단_전국 온누리상품권 가맹점 현황_20240731'}}}};
 // 가짜 브라우저 환경 (+ 로그인/Firestore/geolocation/API)
 function boot({user=null,doc,docErr,fetchImpl,geo,noFirebase=false}={}){
-  const els={},logs=[],fetches=[];
+  const els={},logs=[],fetches=[],keyHandlers=[];
   const authCbs=[];
   const fb=noFirebase?undefined:(()=>{const f={initializeApp(){},auth(){return{onAuthStateChanged(cb){authCbs.push(cb)},getRedirectResult:()=>Promise.resolve(),signInWithPopup:async()=>{const u={uid:'u1',email:'a@x.com'};authCbs.forEach(c=>c(u))},signInWithRedirect(){}}},
     firestore(){return{doc:p=>({get:async()=>{if(docErr){throw docErr}if(!doc)return{exists:false,data:()=>({})};return{exists:true,data:()=>doc}}})}}};f.auth.GoogleAuthProvider=function(){};return f})();
   const ctx={document:{getElementById:id=>els[id]=els[id]||{value:''}},navigator:{geolocation:geo},console:{log:(...a)=>logs.push(a.join(' ')),warn:(...a)=>logs.push(a.join(' ')),error:(...a)=>logs.push(a.join(' '))},
-    fetch:async(u,o)=>{fetches.push({url:String(u),opt:o});return fetchImpl(String(u),o)},AbortController,URLSearchParams,setTimeout,clearTimeout,Promise,JSON,Math,Date,Number,Object,Array,String,isFinite};
+    fetch:async(u,o)=>{fetches.push({url:String(u),opt:o});return fetchImpl(String(u),o)},AbortController,URLSearchParams,setTimeout,clearTimeout,Promise,JSON,Math,Date,Number,Object,Array,String,isFinite,window:{addEventListener:(e,f)=>{if(e==='keydown')keyHandlers.push(f)}}};
   if(fb)ctx.firebase=fb;
   vm.createContext(ctx);
-  vm.runInContext(SRC+';globalThis.M={S,render,esc,guessSido,buildUrl,latestPath,normRow,search,locate,onSearch,setQ,loadKey,login,resolvePath,SIDO,SIDO_PTS,KEY_RE,PER_PAGE,authBox,resultsBox,fmtDate}',ctx);
+  vm.runInContext(SRC+';globalThis.M={openStore,closeStore,storePopup,mapQuery,S,render,esc,guessSido,buildUrl,latestPath,normRow,search,locate,onSearch,setQ,loadKey,login,resolvePath,SIDO,SIDO_PTS,KEY_RE,PER_PAGE,authBox,resultsBox,fmtDate}',ctx);
   const html=()=>els.app.innerHTML;
   const signIn=async()=>{authCbs.forEach(c=>c(user));await sleep(20)};
-  return{M:ctx.M,ctx,els,logs,fetches,html,signIn,text:()=>html().replace(/<[^>]+>/g,' ').replace(/\s+/g,' ')};
+  return{M:ctx.M,ctx,els,logs,fetches,html,keyHandlers,signIn,text:()=>html().replace(/<[^>]+>/g,' ').replace(/\s+/g,' ')};
 }
 const api=(rows,total)=>async(u)=>u.includes('infuser.odcloud.kr')?jres(200,SWG):page(rows,total);
 
@@ -134,6 +134,47 @@ const api=(rows,total)=>async(u)=>u.includes('infuser.odcloud.kr')?jres(200,SWG)
     for(const [code,re] of [[1,/위치 권한이 거부됐어요/],[3,/시간이 초과됐어요/],[2,/위치를 확인할 수 없어요/]]){
       b=boot({user:{uid:'u1'},doc:{onnuriKey:KEY},fetchImpl:api([]),geo:{getCurrentPosition:(s,e)=>e({code})}});await b.signIn();b.M.locate();ok(`위치 오류(code ${code}) → 안내`,re.test(b.text()))}
     b=boot({user:{uid:'u1'},doc:{onnuriKey:KEY},fetchImpl:api([]),geo:undefined});await b.signIn();b.M.locate();ok('위치 기능 미지원 브라우저 → 안내',/위치 기능을 지원하지 않아요/.test(b.text()))}
+  // ── 가게 상세 팝업 ──
+  { const R=[row({'가맹점명':'희망약국','소속 시장명(또는 상점가)':'풍덕천 골목형상점가','소재지':'경기','취급품목':'의약품','가맹 등록년도':2025}),
+             row({'가맹점명':'봄약국','소속 시장명(또는 상점가)':null,'소재지':'전남광주','취급품목':null,'디지털형 가맹 여부':'N','지류형 가맹 여부':'Y','가맹 등록년도':null})];
+    const mk=async()=>{const b=boot({user:{uid:'u1'},doc:{onnuriKey:KEY},fetchImpl:api(R,2)});await b.signIn();b.M.setQ('name','약국');await b.M.search(false);return b};
+    let b=await mk();
+    ok('목록 항목이 눌러서 상세를 여는 버튼(role=button, 키보드 접근, "상세 ›" 표시)',(b.html().match(/class="store tap" role="button" tabindex="0" onclick="openStore\(\d+\)"/g)||[]).length===2&&/상세 ›/.test(b.text()));
+    ok('처음엔 팝업 없음',!/role="dialog"/.test(b.html())&&b.M.S.sel===-1);
+    b.M.openStore(0);let t=b.text(),h=b.html();
+    ok('팝업: 접근성 속성(role=dialog, aria-modal, aria-label)',/role="dialog" aria-modal="true" aria-label="희망약국 상세"/.test(h));
+    ok('팝업: API 정보 6가지(시장·시도·취급품목·지류·디지털·등록년도)',/소속 시장·상점가 풍덕천 골목형상점가/.test(t)&&/시·도 경기/.test(t)&&/취급품목 의약품/.test(t)&&/지류형 가맹 가능/.test(t)&&/디지털형 가맹 가능/.test(t)&&/가맹 등록 2025년/.test(t),t);
+    ok('팝업(디지털 가능): 앱에 카드 등록·충전·카드/QR 결제 안내',/디지털 온누리상품권으로 결제할 때/.test(t)&&/본인 카드를 등록해 충전/.test(t)&&/카드나 QR로 결제/.test(t));
+    ok('팝업: "가게마다 되는 카드가 다른 게 아니라 앱 단위" + 카드사 목록(변경 가능 고지)',/가게마다 되는 카드가 다른 게 아니라/.test(t)&&/신한·현대·삼성·농협·하나·BC·KB국민·롯데로 알려져 있어요/.test(t)&&/바뀔 수 있으니/.test(t));
+    ok('팝업: 공공데이터가 아닌 일반 정보라는 출처 고지 + 앱/공식 사이트 확인 권유',/공공데이터가 아니라 일반 정보예요/.test(t)&&/디지털온누리 앱이나 공식 사이트에서 확인/.test(t));
+    ok('팝업: 카드 실적·혜택 제외 가능 주의',/카드 실적·혜택 참고/.test(t)&&/전월 실적이나 할인 혜택에서 제외될 수 있어요/.test(t)&&/카드사에 확인/.test(t));
+    const dlg=h.slice(h.indexOf('role="dialog"'),h.indexOf('>닫기</button>',h.indexOf('role="dialog"')));   // 팝업 안쪽만
+    const links=[...dlg.matchAll(/<a class="btn ghost" href="([^"]+)" target="_blank" rel="noopener noreferrer">([^<]+)<\/a>/g)].map(m=>[m[1],m[2]]);
+    ok('지도 링크: 카카오맵·네이버지도에 "가게명 + 시장명"으로 검색',links.some(([u,n])=>n==='카카오맵에서 찾기 ↗'&&u==='https://map.kakao.com/?q='+encodeURIComponent('희망약국 풍덕천 골목형상점가'))&&links.some(([u,n])=>n==='네이버지도에서 찾기 ↗'&&u==='https://map.naver.com/p/search/'+encodeURIComponent('희망약국 풍덕천 골목형상점가')),JSON.stringify(links));
+    ok('지도 링크: 새 창 + noopener noreferrer, 공식 사이트 링크 포함',links.length===3&&links.some(([u])=>u==='https://www.onnuri.gift/'));
+    // 닫기
+    b.M.closeStore();ok('닫기(closeStore) → 팝업 사라짐',b.M.S.sel===-1&&!/role="dialog"/.test(b.html()));
+    b.M.openStore(0);ok('✕ 버튼과 아래 "닫기" 버튼, 바깥 영역 클릭 닫기 핸들러가 모두 있음',/id="pop_close" aria-label="닫기" onclick="closeStore\(\)"/.test(b.html())&&/<div class="pop" onclick="closeStore\(\)">/.test(b.html())&&/onclick="event\.stopPropagation\(\)"/.test(b.html())&&/>닫기<\/button><\/div><\/div><\/div>/.test(b.html()));
+    ok('Esc 키 핸들러 등록, Esc로 닫힘',b.keyHandlers.length===1&&(b.keyHandlers[0]({key:'x'}),b.M.S.sel===0)&&(b.keyHandlers[0]({key:'Escape'}),b.M.S.sel===-1));
+    ok('열릴 때 닫기 버튼에 포커스 이동 시도(키보드 사용자)',(()=>{let f=0;b.els.pop_close={focus(){f++}};b.M.openStore(0);return f===1})());
+    // 디지털 불가 / 정보 없음 / 지역 표기
+    b.M.openStore(1);t=b.text();
+    ok('디지털 불가 가게: 카드 안내 대신 "디지털 가맹으로는 등록돼 있지 않아요" 안내',/디지털 가맹으로는 등록돼 있지 않아요/.test(t)&&!/본인 카드를 등록해 충전/.test(t)&&!/카드 실적·혜택 참고/.test(t)&&/디지털형 가맹 정보 없음/.test(t));
+    ok('정보 없는 항목은 "정보 없음", 등록년도 없으면 줄 생략, 전남광주 → 전남·광주',/소속 시장·상점가 정보 없음/.test(t)&&/취급품목 정보 없음/.test(t)&&!/가맹 등록/.test(t)&&/시·도 전남·광주/.test(t));
+    ok('시장명이 없으면 지도 검색어에 시·도를 사용(전남·광주 → "전남 광주")',b.M.mapQuery(b.M.S.rows[1])==='봄약국 전남 광주'&&b.M.mapQuery({name:'가',market:'나'})==='가 나'&&b.M.mapQuery({})==='');
+    // 안전
+    b.M.openStore(-1);b.M.openStore(99);b.M.openStore(NaN);b.M.openStore(undefined);ok('잘못된 번호로 열어도 오류 없이 무시',b.M.S.sel===1);
+    b.M.closeStore();b.M.closeStore();ok('이미 닫혀 있을 때 또 닫아도 안전',b.M.S.sel===-1);
+    // 이스케이프 (가게명·시장명·검색 링크)
+    const evil=boot({user:{uid:'u1'},doc:{onnuriKey:KEY},fetchImpl:api([row({'가맹점명':'"><img src=x onerror=alert(1)>','소속 시장명(또는 상점가)':'<script>alert(2)</script>&q=1','취급품목':'<b>x</b>'})],1)});await evil.signIn();evil.M.setQ('name','a');await evil.M.search(false);evil.M.openStore(0);
+    const eh=evil.html();
+    ok('XSS 방어(팝업): 태그·따옴표가 이스케이프되고 링크가 깨지지 않음',!eh.includes('<img src=x')&&!eh.includes('<script>alert')&&!eh.includes('<b>x</b>')&&/aria-label="&quot;&gt;&lt;img/.test(eh));
+    ok('XSS 방어(링크): 검색어가 URL 인코딩되어 속성 밖으로 못 나감',!/href="[^"]*[<>]/.test(eh)&&[...eh.matchAll(/href="(https:\/\/map\.[^"]+)"/g)].every(m=>!/[<>" ]/.test(m[1])));
+    // 새 조회/더 보기 시 팝업 닫힘
+    b=await mk();b.M.openStore(0);await b.M.search(false);ok('새로 조회하면 팝업이 닫힘',b.M.S.sel===-1);
+    b.M.openStore(1);await b.M.search(true);ok('더 보기를 누르면 팝업이 닫힘',b.M.S.sel===-1);
+    ok('팝업을 열고 닫아도 키·검색 상태는 그대로',(()=>{b.M.openStore(0);b.M.closeStore();return b.M.S.key===KEY&&b.M.S.q.name==='약국'})());
+    ok('팝업이 열린 화면에도 키가 없음',(()=>{b.M.openStore(0);return !b.html().includes(KEY)&&!b.logs.join('\n').includes(KEY)})())}
   // ── 화면 구성 ──
   { const b=boot({user:{uid:'u1'},doc:{onnuriKey:KEY},fetchImpl:api([])});await b.signIn();
     ok('경기지역화폐 영역: "준비 중" 안내 + 공식 조회 링크(새 창, noopener)',/경기지역화폐/.test(b.text())&&/준비 중/.test(b.text())&&/search\.konacard\.co\.kr\/payable-merchants/.test(b.html())&&/target="_blank" rel="noopener noreferrer"/.test(b.html()));
