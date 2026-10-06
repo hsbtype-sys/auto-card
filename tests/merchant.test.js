@@ -1,4 +1,4 @@
-// 가맹점 심층 분석 페이지(merchant.html): 키는 로그인 후 Firestore에서, 조회는 온누리 API(헤더 인증), 현재 위치→시·도 추정
+// 지역화폐 가맹점 조회 페이지(merchant.html): 키는 로그인 후 Firestore에서, 조회는 온누리 API(헤더 인증), 현재 위치→시·도 추정
 const fs=require('fs'),vm=require('vm'),path=require('path');
 const HTML=fs.readFileSync(path.join(__dirname,'..','merchant.html'),'utf8');
 const SRC=HTML.match(/<script>([\s\S]*)<\/script>/)[1];
@@ -349,7 +349,7 @@ const api=(rows,total)=>async(u)=>u.includes('infuser.odcloud.kr')?jres(200,SWG)
   // ── 화면 구조(계층): 제목 하나 · 탭 · 같은 구조의 두 영역 ──
   { const b=boot({user:{uid:'u1'},doc:{onnuriKey:KEY},ggDoc:{ggKey:'4b5b7651f0004801ab7a37ab6440907e'},fetchImpl:api([row()],1),geo:{getCurrentPosition:(s)=>s({coords:{latitude:37.3947,longitude:127.1112}})}});await b.signIn();
     const h=b.html();
-    ok('페이지 이름: "지역화폐 가맹점 심층 분석" (제목 태그 h1은 하나)',/<title>지역화폐 가맹점 심층 분석 · 카드픽<\/title>/.test(HTML)&&/<h1 class="ttl">지역화폐 가맹점 심층 분석<\/h1>/.test(HTML)&&(HTML.match(/<h1\b/g)||[]).length===1&&!/<h1>온누리 가맹점 조회<\/h1>/.test(h));
+    ok('페이지 이름: "지역화폐 가맹점 조회" (제목 태그 h1은 하나)',/<title>지역화폐 가맹점 조회 · 카드픽<\/title>/.test(HTML)&&/<h1 class="ttl">지역화폐 가맹점 조회<\/h1>/.test(HTML)&&(HTML.match(/<h1\b/g)||[]).length===1&&!/<h1>온누리 가맹점 조회<\/h1>/.test(h));
     ok('본문에 큰 제목(h1)이 없고 영역 제목은 h2(온누리상품권 / 경기지역화폐) 두 개 — 같은 계층',!/<h1/.test(h)&&(h.match(/<h2>/g)||[]).length===2&&/<h2>온누리상품권<\/h2>/.test(h)&&/<h2>경기지역화폐<\/h2>/.test(h));
     ok('탭: 온누리상품권 · 경기지역화폐 (role=tablist/tab, aria-selected)',/role="tablist"/.test(h)&&/id="tab_onnuri" aria-selected="true"/.test(h)&&/id="tab_gg" aria-selected="false"/.test(h));
     ok('처음엔 온누리 영역만 보이고 경기 영역은 숨김(hidden)',/id="pnl_onnuri"[^>]*>/.test(h)&&!/id="pnl_onnuri"[^>]*hidden/.test(h)&&/id="pnl_gg"[^>]*hidden/.test(h));

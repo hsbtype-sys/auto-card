@@ -33,11 +33,11 @@ ok('헤더 제목이 버튼이고 go(\'rec\') 호출',/<button class="home" oncl
  run("go('rec')");ok('다른 화면(전체카드혜택)에서 제목 클릭 → 결제카드분석',fromBenefits&&/어떤 카드로 결제할까/.test(e.app.innerHTML)&&e.pg.textContent==='결제카드분석');
  run("go('data');toggleMenu()");const open1=e.menu.hidden===false;run("go('rec')");
  ok('메뉴가 열려 있어도 제목 클릭 → 이동하며 메뉴 닫힘',open1&&e.menu.hidden===true&&e.scrim.hidden===true)}
-// 삼선 메뉴의 "지역화폐 가맹점 심층 분석": 앱 안 화면 전환이 아니라 별도 페이지(merchant.html)로 이동하는 링크
+// 삼선 메뉴의 "지역화폐 가맹점 조회": 앱 안 화면 전환이 아니라 별도 페이지(merchant.html)로 이동하는 링크
 {const x=boot();const e=x.dev.els;x.X.render();const m=e.menu.innerHTML;
- ok('메뉴에 "🔎 지역화폐 가맹점 심층 분석" 링크(merchant.html)가 있음',/<a role="menuitem" class="mi" href="merchant\.html">🔎 지역화폐 가맹점 심층 분석<\/a>/.test(m));
+ ok('메뉴에 "🔎 지역화폐 가맹점 조회" 링크(merchant.html)가 있음',/<a role="menuitem" class="mi" href="merchant\.html">🔎 지역화폐 가맹점 조회<\/a>/.test(m));
  const order=[...m.matchAll(/(go\('(\w+)'\))|href="(merchant\.html)"/g)].map(y=>y[2]||'merchant');
- ok('메뉴 순서: 결제카드분석 → 내 카드 → 카드 선택 → 기록 → 지역화폐 가맹점 심층 분석 → 데이터·계정 → 전체카드혜택',JSON.stringify(order)==='["rec","cards","pick","log","merchant","data","benefits"]',order.join(','));
+ ok('메뉴 순서: 결제카드분석 → 내 카드 → 카드 선택 → 기록 → 지역화폐 가맹점 조회 → 데이터·계정 → 전체카드혜택',JSON.stringify(order)==='["rec","cards","pick","log","merchant","data","benefits"]',order.join(','));
  ok('링크는 새 창이 아니라 같은 창으로 이동(앱 안에서 이어서 사용)',!/href="merchant\.html"[^>]*target=/.test(m));
  ok('데이터·계정 위의 구분선(sep)은 그대로 데이터·계정 항목에만',(m.match(/class="[^"]*sep[^"]*"/g)||[]).length===1&&/class="[^"]*sep[^"]*"[^>]*onclick="go\('data'\)"/.test(m));
  ok('메뉴 링크는 화면 이름 표시/강조(on) 대상이 아님 — 현재 화면 표시는 그대로',(m.match(/class="on"/g)||[]).length===1&&e.pg.textContent==='결제카드분석');
