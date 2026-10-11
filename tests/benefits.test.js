@@ -1,6 +1,7 @@
 // 전체카드혜택 화면: 내용이 계산 엔진(POOLS/CHARGERS)과 일치하고, PDF 저장(인쇄) 버튼/스타일이 있는지
 const {boot,ok,done,HTML}=require('./harness');
 const b=boot();const X=b.X;
+X.S.enabled=['shinhan','hana','samsung','nhnew','nhone'];   // 아래 내용 점검은 5장 모두 선택한 상태 기준
 X.setTab('benefits');const h=X.vBenefits();
 const txt=h.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');
 ok('제목·PDF 저장 버튼·출력 헤더',h.includes('<h1>전체카드혜택</h1>')&&h.includes('printBenefits()')&&h.includes('printhead'));
@@ -56,4 +57,26 @@ ok('요약 표에 농협 항목(기본적립·스마트적립·부가서비스) 
 ok('배지 색: 신한 #0046ff, 하나 #078a5d, 삼성 #1428a0',/\.tag\.sh\{background:#0046ff\}/.test(HTML)&&/\.tag\.hn\{background:#078a5d\}/.test(HTML)&&/\.tag\.ss\{background:#1428a0\}/.test(HTML));
 ok('하나 배지에 이전 보라색(#7c3aed) 없음',!/\.tag\.hn\{background:#7c3aed\}/.test(HTML));
 ok('세 카드 배지 색이 서로 다름',new Set(['0046ff','078a5d','1428a0']).size===3);
+// ── 선택한 카드만 표시 ──
+{const vm=require('vm'),T=h=>h.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');
+ const TITLE={shinhan:'신한카드 EV (신용)',hana:'MG+ S 하나카드',samsung:'삼성 iD EV 카드',nhnew:'농협 올바른 NEW HAVE 체크카드',nhone:'농협 올바른 NEW HAVE 원이 체크카드'};
+ const shown=h=>Object.keys(TITLE).filter(k=>h.includes('<h2>')&&new RegExp('</span> '+TITLE[k].replace(/[()+]/g,'\\$&')+'</h2>').test(h));
+ const x=boot();x.X.S.enabled=['shinhan','nhone'];vm.runInContext("go('benefits')",x.ctx);
+ let h=x.X.vBenefits(),t=T(h);
+ ok('2장 선택: 카드별 상세는 신한·원이만',shown(h).join()==='shinhan,nhone',shown(h).join());
+ ok('2장 선택: 요약 표에 선택 안 한 카드 항목(배달앱·간편결제·멤버십·주차) 없음',!/🛵 배달앱|📱 간편결제|🎟 디지털 멤버십|🅿 주차장|🎬 영상 스트리밍/.test(t));
+ ok('2장 선택: 선택한 카드 항목은 유지(마트·전기차 충전·기본적립·해외)',/대형마트/.test(t)&&/전기차 충전/.test(t)&&/기본적립/.test(t)&&/해외 결제/.test(t));
+ ok('2장 선택: 전기차 충전 줄에 삼성 배지/문구 없음',!/70%\(60만↑\)/.test(t)&&!h.includes('>삼성<'));
+ ok('농협 묶음 배지는 선택한 원이만 표시(뉴해브 배지 없음)',(()=>{const r=(h.match(/기본적립 \(모든 가맹점\)<\/div>([\s\S]*?)<\/div><\/div>/)||[])[1]||'';return /class="tag n2"/.test(r)&&!/class="tag n1"/.test(r)})());
+ ok('안내: 선택한 카드 2장만 보는 중 + 다른 카드 3장도 보기',/선택한 카드 2장 만 보는 중/.test(t)&&/다른 카드 3장도 보기/.test(t));
+ ok('코스트코 안내는 항상 표시',/코스트코.*현대카드만/.test(t));
+ vm.runInContext('benAll=true;render()',x.ctx);h=x.X.vBenefits();
+ ok('"다른 카드도 보기" → 5장 모두 + 되돌리기 링크',shown(h).length===5&&/선택한 카드만 보기/.test(T(h)));
+ ok('모두 보기는 저장 데이터를 바꾸지 않음',x.X.S.enabled.join()==='shinhan,nhone');
+ vm.runInContext('benAll=false;render()',x.ctx);ok('되돌리면 다시 2장',shown(x.X.vBenefits()).join()==='shinhan,nhone');
+ x.X.S.enabled=['shinhan','hana','samsung','nhnew','nhone'];ok('5장 모두 선택: "다른 카드 보기" 링크 없음',!/다른 카드 \d장도 보기/.test(T(x.X.vBenefits()))&&shown(x.X.vBenefits()).length===5);
+ x.X.S.enabled=['hana'];h=x.X.vBenefits();t=T(h);ok('하나만 선택: 하나 상세 + 요약은 하나 항목만',shown(h).join()==='hana'&&/📱 간편결제/.test(t)&&!/🛒 대형마트|⚡ 전기차 충전|🧾 기본적립/.test(t));
+ const f=boot({fresh:true});vm.runInContext("go('benefits')",f.ctx);h=f.X.vBenefits();
+ ok('선택 전(새 사용자): 모든 카드 표시 + 카드 선택 안내',shown(h).length===5&&/아직 선택한 카드가 없어 모든 카드/.test(T(h)));
+ ok('안내 문구는 인쇄(PDF)에서 숨김(no-print 안)',/<div class="no-print">[\s\S]*?선택한 카드 <b>/.test((()=>{x.X.S.enabled=['shinhan'];return x.X.vBenefits()})()))}
 process.exit(done('benefits')?1:0);
